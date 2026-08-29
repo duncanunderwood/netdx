@@ -1,8 +1,11 @@
+mod analytics;
 mod engine;
+mod eventlog;
 mod net;
 mod qr;
 mod state;
 mod ui;
+mod updater;
 mod web;
 
 use std::net::SocketAddr;
@@ -37,6 +40,12 @@ struct Cli {
     /// if not provided.
     #[arg(long)]
     web_token: Option<String>,
+
+    /// Disable the small amount of anonymous, aggregate usage analytics netdx otherwise sends
+    /// (event name, coarse numeric results like measured Mbps, OS/arch/version — never
+    /// hostnames, IPs, or traceroute/telnet targets). Same as setting NETDX_NO_ANALYTICS=1.
+    #[arg(long)]
+    no_analytics: bool,
 }
 
 #[tokio::main]
@@ -46,6 +55,11 @@ async fn main() -> anyhow::Result<()> {
     if cli.no_tui && cli.no_web {
         anyhow::bail!("--no-tui and --no-web together leave nothing running; drop one of them");
     }
+
+    let analytics_enabled =
+        !cli.no_analytics && std::env::var("NETDX_NO_ANALYTICS").map(|v| v != "1").unwrap_or(true);
+    analytics::set_enabled(analytics_enabled);
+    analytics::track("app_start", serde_json::Value::Null);
 
     let shared_state = engine::new_shared_state();
     let (changed_tx, changed_rx) = watch::channel(());

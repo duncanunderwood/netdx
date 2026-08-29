@@ -60,6 +60,8 @@ pub struct App {
     pub web_url: Option<String>,
     pub qr: Option<String>,
     pub show_qr: bool,
+    pub show_update: bool,
+    pub log_scroll: usize,
 }
 
 impl App {
@@ -75,6 +77,8 @@ impl App {
             web_url,
             qr,
             show_qr: false,
+            show_update: false,
+            log_scroll: 0,
         }
     }
 
@@ -82,11 +86,11 @@ impl App {
     pub fn status_hint(&self) -> String {
         let base = match self.mode {
             Mode::Normal => match self.tab {
-                Tab::Overview => "r refresh · Tab switch · w web link QR · q quit".to_string(),
-                Tab::Traceroute => "Enter start traceroute · s stop · Tab switch · w web link QR · q quit".to_string(),
-                Tab::Telnet => "Enter connect · d disconnect · i type · Tab switch · w web link QR · q quit".to_string(),
+                Tab::Overview => "r refresh · Tab switch · \u{2191}/\u{2193} log · w web QR · u updates · q quit".to_string(),
+                Tab::Traceroute => "Enter start traceroute · s stop · Tab switch · \u{2191}/\u{2193} log · u updates · q quit".to_string(),
+                Tab::Telnet => "Enter connect · d disconnect · i type · Tab switch · \u{2191}/\u{2193} log · u updates · q quit".to_string(),
                 Tab::Speedtest => format!(
-                    "Enter start speed test · s stop · n server ({}) · Tab switch · w web link QR · q quit",
+                    "Enter start speed test · s stop · n server ({}) · Tab switch · \u{2191}/\u{2193} log · u updates · q quit",
                     self.speedtest_server.label()
                 ),
             },
@@ -95,6 +99,8 @@ impl App {
         };
         if self.mode == Mode::Normal && self.show_qr {
             format!("{base}  (Esc/w to close QR)")
+        } else if self.mode == Mode::Normal && self.show_update {
+            format!("{base}  (Esc to close updates)")
         } else {
             base
         }
@@ -111,6 +117,19 @@ impl App {
             self.show_qr = false;
             return;
         }
+        if self.mode == Mode::Normal && self.show_update {
+            match key.code {
+                KeyCode::Esc => {
+                    self.show_update = false;
+                    return;
+                }
+                KeyCode::Enter | KeyCode::Char('i') => {
+                    let _ = commands.send(Command::InstallUpdate);
+                    return;
+                }
+                _ => {}
+            }
+        }
 
         match self.mode {
             Mode::Normal => self.on_key_normal(key, commands),
@@ -124,6 +143,19 @@ impl App {
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('w') => self.show_qr = !self.show_qr,
+            KeyCode::Char('u') => {
+                self.show_update = true;
+                let _ = commands.send(Command::CheckForUpdate);
+            }
+            KeyCode::Up => self.log_scroll = self.log_scroll.saturating_add(1),
+            KeyCode::Down => self.log_scroll = self.log_scroll.saturating_sub(1),
+            KeyCode::Char('e') => {
+                let _ = commands.send(Command::LogExport);
+            }
+            KeyCode::Char('C') => {
+                let _ = commands.send(Command::LogClear);
+                self.log_scroll = 0;
+            }
             KeyCode::Tab | KeyCode::Right => self.tab = self.tab.next(),
             KeyCode::BackTab | KeyCode::Left => self.tab = self.tab.prev(),
             KeyCode::Char('1') => self.tab = Tab::Overview,
@@ -162,6 +194,7 @@ impl App {
             _ => {}
         }
     }
+
 
 
     fn on_key_edit_traceroute(&mut self, key: KeyEvent, commands: &mpsc::UnboundedSender<Command>) {

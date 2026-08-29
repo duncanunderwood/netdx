@@ -158,35 +158,83 @@ impl Default for TracerouteState {
     }
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct LogEntry {
+    /// Full RFC3339-ish UTC timestamp (`2026-08-30T14:03:41Z`), so a CSV export is meaningful
+    /// across midnight/day boundaries — the old HH:MM:SS-only clock silently lost the date.
+    pub ts: String,
+    pub message: String,
+}
+
 #[derive(Serialize, Clone, Debug, Default)]
+pub struct UpdateState {
+    pub current_version: String,
+    pub checking: bool,
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+    pub installing: bool,
+    pub error: Option<String>,
+    pub release_url: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct AppState {
     pub network: NetworkOverview,
     pub traceroute: TracerouteState,
     pub telnet: TelnetState,
     pub speedtest: SpeedtestState,
-    pub log: VecDeque<String>,
+    pub log: VecDeque<LogEntry>,
+    pub update: UpdateState,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            network: NetworkOverview::default(),
+            traceroute: TracerouteState::default(),
+            telnet: TelnetState::default(),
+            speedtest: SpeedtestState::default(),
+            log: VecDeque::new(),
+            update: UpdateState { current_version: env!("CARGO_PKG_VERSION").to_string(), ..Default::default() },
+        }
+    }
 }
 
 impl AppState {
     pub fn push_log(&mut self, msg: impl Into<String>) {
-        let ts = chrono_now_hms();
-        self.log.push_back(format!("{ts} {}", msg.into()));
+        self.log.push_back(LogEntry { ts: now_rfc3339(), message: msg.into() });
         while self.log.len() > LOG_CAP {
             self.log.pop_front();
         }
     }
 }
 
-/// Minimal HH:MM:SS clock without pulling in a chrono dependency.
-fn chrono_now_hms() -> String {
+/// Minimal UTC `YYYY-MM-DDTHH:MM:SSZ` clock without pulling in a `chrono`/`time` dependency.
+/// Civil-date math is the well-known days-since-epoch algorithm (Howard Hinnant's
+/// `civil_from_days`), good for any date in the `i32` range — far more than this app needs.
+pub(crate) fn now_rfc3339() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let secs_of_day = secs % 86_400;
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
+    let days = secs.div_euclid(86_400);
+    let secs_of_day = secs.rem_euclid(86_400);
+
+    // civil_from_days: https://howardhinnant.github.io/date_algorithms.html
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
     format!(
-        "{:02}:{:02}:{:02}",
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        y,
+        m,
+        d,
         secs_of_day / 3600,
         (secs_of_day % 3600) / 60,
         secs_of_day % 60
@@ -217,8 +265,13 @@ pub enum Command {
         server: Option<String>,
     },
     SpeedtestStop,
+    LogClear,
+    LogExport,
+    CheckForUpdate,
+    InstallUpdate,
 }
 
 pub fn default_max_hops() -> u8 {
     30
 }
+

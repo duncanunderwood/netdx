@@ -6,13 +6,14 @@
 //! inside it, so a blocking lock is simpler and cheaper than an async one.
 
 use std::sync::Arc;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::net::{interfaces, speedtest, telnet, traceroute};
 use crate::state::{AppState, Command, SpeedtestState, TelnetState, TracerouteState};
+use crate::updater::UpdateInfo;
 
 pub type SharedState = Arc<RwLock<AppState>>;
 
@@ -29,6 +30,7 @@ pub async fn run(
     let mut telnet_task: Option<JoinHandle<()>> = None;
     let mut telnet_input: Option<mpsc::UnboundedSender<Vec<u8>>> = None;
     let mut speedtest_task: Option<JoinHandle<()>> = None;
+    let pending_update: Arc<Mutex<Option<UpdateInfo>>> = Arc::new(Mutex::new(None));
 
     load_interfaces(&state, &changed_tx, "interfaces loaded");
     spawn_public_ip_lookup(&state, &changed_tx);
@@ -60,6 +62,7 @@ pub async fn run(
                 let _ = changed_tx.send(());
 
                 let state2 = state.clone();
+                crate::analytics::track("traceroute_start", serde_json::json!({"max_hops": max_hops}));
                 let changed2 = changed_tx.clone();
                 traceroute_task = Some(tokio::spawn(run_traceroute(state2, changed2, target, max_hops, run_id)));
             }
@@ -89,6 +92,7 @@ pub async fn run(
                     };
                     st.push_log(format!("telnet connecting to {host}:{port}"));
                 }
+                crate::analytics::track("telnet_connect", serde_json::Value::Null);
                 let _ = changed_tx.send(());
 
                 let (input_tx, input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -207,6 +211,109 @@ pub async fn run(
                 st.push_log("speed test stopped");
                 drop(st);
                 let _ = changed_tx.send(());
+            }
+
+            Command::LogClear => {
+                let mut st = state.write();
+                st.log.clear();
+                st.push_log("event log cleared");
+                drop(st);
+                let _ = changed_tx.send(());
+            }
+            Command::LogExport => {
+                let result = {
+                    let st = state.read();
+                    crate::eventlog::export_csv(&st.log)
+                };
+                let mut st = state.write();
+                match result {
+                    Ok(path) => st.push_log(format!("event log exported to {}", path.display())),
+                    Err(e) => st.push_log(format!("event log export failed: {e}")),
+                }
+                drop(st);
+                let _ = changed_tx.send(());
+            }
+
+            Command::CheckForUpdate => {
+                {
+                    let mut st = state.write();
+                    st.update.checking = true;
+                    st.update.error = None;
+                    st.push_log("checking for updates…");
+                }
+                let _ = changed_tx.send(());
+
+                let state2 = state.clone();
+                let changed2 = changed_tx.clone();
+                let pending2 = pending_update.clone();
+                tokio::spawn(async move {
+                    let result = crate::updater::check_for_update().await;
+                    let mut st = state2.write();
+                    st.update.checking = false;
+                    match result {
+                        Ok(res) => {
+                            st.update.latest_version = Some(res.latest_version.clone());
+                            match res.update {
+                                Some(info) => {
+                                    st.update.update_available = true;
+                                    st.update.release_url = Some(info.release_url.clone());
+                                    st.push_log(format!("update available: {}", info.latest_version));
+                                    crate::analytics::track(
+                                        "update_available",
+                                        serde_json::json!({"latest_version": info.latest_version}),
+                                    );
+                                    *pending2.lock() = Some(info);
+                                }
+                                None => {
+                                    st.update.update_available = false;
+                                    st.push_log(format!("netdx is up to date ({})", res.latest_version));
+                                    *pending2.lock() = None;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            st.update.error = Some(e.clone());
+                            st.push_log(format!("update check failed: {e}"));
+                            *pending2.lock() = None;
+                        }
+                    }
+                    drop(st);
+                    let _ = changed2.send(());
+                });
+            }
+            Command::InstallUpdate => {
+                let info = pending_update.lock().clone();
+                match info {
+                    Some(info) => {
+                        {
+                            let mut st = state.write();
+                            st.update.installing = true;
+                            st.push_log(format!("installing update {}…", info.latest_version));
+                        }
+                        let _ = changed_tx.send(());
+                        crate::analytics::track("update_install", serde_json::json!({"latest_version": info.latest_version}));
+
+                        let state2 = state.clone();
+                        let changed2 = changed_tx.clone();
+                        tokio::spawn(async move {
+                            // On success this exits the process directly and never returns here.
+                            if let Err(e) = crate::updater::install_and_relaunch(&info).await {
+                                let mut st = state2.write();
+                                st.update.installing = false;
+                                st.update.error = Some(e.clone());
+                                st.push_log(format!("update install failed: {e}"));
+                                drop(st);
+                                let _ = changed2.send(());
+                            }
+                        });
+                    }
+                    None => {
+                        let mut st = state.write();
+                        st.push_log("install requested, but no update is available — press u to check first");
+                        drop(st);
+                        let _ = changed_tx.send(());
+                    }
+                }
             }
         }
     }
@@ -400,6 +507,17 @@ async fn run_speedtest(state: SharedState, changed: watch::Sender<()>, server: s
     let mut st = state.write();
     st.speedtest.running = false;
     st.speedtest.stage = "done".to_string();
+    crate::analytics::track(
+        "speedtest_complete",
+        serde_json::json!({
+            "server": server.id_str(),
+            "ping_ms": st.speedtest.ping_ms,
+            "jitter_ms": st.speedtest.jitter_ms,
+            "packet_loss_pct": st.speedtest.packet_loss_pct,
+            "download_mbps": st.speedtest.download_mbps,
+            "upload_mbps": st.speedtest.upload_mbps,
+        }),
+    );
     drop(st);
     let _ = changed.send(());
 }

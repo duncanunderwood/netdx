@@ -99,6 +99,19 @@
   }
   .theme-toggle-btn:hover{border-color:var(--info);color:var(--info);}
   .theme-toggle-btn .theme-glyph{font-size:.95rem;line-height:1;}
+  .update-banner{
+    display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;
+    padding:.55rem 1rem;
+    border-bottom:1px solid var(--border);
+    background:var(--card-bg);
+    font-size:.85rem;
+  }
+  .update-banner-text{flex:1 1 auto;min-width:0;font-weight:700;}
+  .update-banner-text.error-text{margin:0;}
+  .update-banner-actions{display:flex;gap:.5rem;flex-wrap:wrap;}
+  .update-banner.available{color:var(--info);}
+  .update-banner.uptodate{color:var(--ok);}
+  .update-banner.installing{color:var(--warn);}
 
   nav.tabs{
     display:flex;overflow-x:auto;
@@ -206,28 +219,23 @@
   .stat .label{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
   .stat .value{font-size:1.3rem;font-weight:700;margin-top:.2rem;}
   .stat .value.muted-stat{font-size:.82rem;font-weight:600;color:var(--muted);}
+  .speed-readout{display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:.75rem;}
+  .speed-metric{flex:1 1 160px;}
+  .speed-metric-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .speed-metric-value{font-size:2.1rem;font-weight:800;line-height:1.15;margin-top:.15rem;}
+  .speed-metric-value.dl-color{color:var(--info);}
+  .speed-metric-value.ul-color{color:var(--accent3);}
+  .speed-metric-value.muted-stat{font-size:.95rem;font-weight:600;color:var(--muted);}
   #spark{width:100%;height:160px;display:block;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;}
 
-  .log-toggle-btn{
-    position:fixed;right:1rem;bottom:1rem;z-index:20;
-    min-height:44px;min-width:44px;padding:.5rem 1rem;
-    border-radius:999px;border:1px solid var(--info);
-    background:var(--card-bg);color:var(--info);font-weight:700;
-    cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.2);
-  }
-  .log-drawer{
-    position:fixed;right:1rem;left:1rem;bottom:4.5rem;max-width:640px;margin-left:auto;
-    max-height:45vh;
-    background:var(--card-bg);border:1px solid var(--border);border-radius:10px;
-    display:flex;flex-direction:column;overflow:hidden;
-    transform:translateY(16px);opacity:0;pointer-events:none;
-    transition:transform .15s ease, opacity .15s ease;
-    z-index:20;box-shadow:0 4px 20px rgba(0,0,0,.25);
-  }
-  .log-drawer.open{transform:translateY(0);opacity:1;pointer-events:auto;}
-  .log-drawer-head{display:flex;justify-content:space-between;align-items:center;padding:.55rem .8rem;border-bottom:1px solid var(--border);font-weight:700;font-size:.83rem;}
-  .log-drawer-head button{background:none;border:none;font-size:1.2rem;line-height:1;cursor:pointer;color:var(--muted);min-width:32px;min-height:32px;}
-  .log-body{overflow-y:auto;padding:.5rem .8rem;font-size:.74rem;white-space:pre-wrap;}
+  .log-panel-wrap{width:100%;max-width:1100px;margin:0 auto;padding:0 1rem;}
+  .log-panel-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:.6rem;font-weight:700;font-size:.83rem;}
+  .log-panel-actions{display:flex;gap:.5rem;flex-wrap:wrap;}
+  .log-panel-body{max-height:280px;overflow-y:auto;border-top:1px solid var(--border);}
+  .log-row{display:flex;gap:.6rem;padding:.32rem .1rem;font-size:.76rem;border-bottom:1px solid var(--border);}
+  .log-row:last-child{border-bottom:none;}
+  .log-row .log-time{color:var(--muted);flex:0 0 auto;}
+  .log-row .log-msg{word-break:break-word;}
   footer.site-footer{
     text-align:center;
     padding:1rem 1rem 5rem;
@@ -256,11 +264,19 @@
     <button id="themeToggle" class="theme-toggle-btn" type="button" aria-label="Toggle colour theme">
       <span class="theme-glyph" aria-hidden="true"></span><span class="theme-label"></span>
     </button>
+    <button id="checkUpdateBtn" class="btn secondary" type="button">Check for Updates</button>
     <div id="statusPill" class="pill info" role="status" aria-live="polite">
       <span class="dot"></span><span id="statusText">Connecting…</span>
     </div>
   </div>
 </header>
+<div id="updateBanner" class="update-banner" role="status" aria-live="polite" hidden>
+  <span id="updateBannerText" class="update-banner-text"></span>
+  <div class="update-banner-actions">
+    <button id="updateInstallBtn" class="btn" type="button" hidden>Install &amp; Restart</button>
+    <button id="updateDismissBtn" class="btn secondary" type="button" hidden>Dismiss</button>
+  </div>
+</div>
 
 <nav class="tabs" role="tablist">
   <button class="tab-btn active" data-tab="overview" role="tab" aria-selected="true" type="button">Overview</button>
@@ -341,6 +357,16 @@
       </div>
     </div>
     <p id="stError" class="error-text" hidden></p>
+    <div class="speed-readout">
+      <div class="speed-metric">
+        <div class="speed-metric-label">Download</div>
+        <div class="speed-metric-value dl-color mono" id="liveDownVal">—</div>
+      </div>
+      <div class="speed-metric">
+        <div class="speed-metric-label">Upload</div>
+        <div class="speed-metric-value ul-color mono" id="liveUpVal">—</div>
+      </div>
+    </div>
     <canvas id="spark"></canvas>
     <div class="stats-grid">
       <div class="stat"><div class="label">Ping</div><div class="value" id="statPing">—</div></div>
@@ -352,17 +378,21 @@
   </section>
 
 </main>
+<div class="log-panel-wrap">
+  <div class="card">
+    <div class="log-panel-head">
+      <span>Activity Log</span>
+      <div class="log-panel-actions">
+        <button class="btn secondary" id="logExportBtn" type="button">Export CSV</button>
+        <button class="btn danger secondary" id="logClearBtn" type="button">Clear</button>
+      </div>
+    </div>
+    <div id="logBody" class="log-panel-body mono"></div>
+  </div>
+</div>
 
 <footer class="site-footer">Developed by <a href="https://myevent-labs.io" target="_blank" rel="noopener noreferrer">MyEvent Labs</a></footer>
 
-<button id="logToggle" class="log-toggle-btn" type="button" title="Activity log">Log</button>
-<div id="logDrawer" class="log-drawer">
-  <div class="log-drawer-head">
-    <span>Activity Log</span>
-    <button id="logClose" type="button" aria-label="Close log">&times;</button>
-  </div>
-  <div id="logBody" class="log-body mono"></div>
-</div>
 
 <script>
 (function(){
@@ -801,6 +831,8 @@
   var statLoss = $('#statLoss');
   var statDown = $('#statDown');
   var statUp = $('#statUp');
+  var liveDownVal = $('#liveDownVal');
+  var liveUpVal = $('#liveUpVal');
   var lastSpeedtestSamples = {down: [], up: []};
 
   stStart.addEventListener('click', function(){
@@ -829,6 +861,35 @@
     return true;
   }
 
+  function smoothSeries(arr){
+    if(!arr || arr.length < 2) return (arr || []).slice();
+    var winSize = 4;
+    var before = Math.floor((winSize - 1) / 2);
+    var after = winSize - 1 - before;
+    var out = new Array(arr.length);
+    for(var i = 0; i < arr.length; i++){
+      var lo = Math.max(0, i - before);
+      var hi = Math.min(arr.length - 1, i + after);
+      var sum = 0;
+      for(var j = lo; j <= hi; j++) sum += arr[j];
+      out[i] = sum / (hi - lo + 1);
+    }
+    return out;
+  }
+  function hexToRgba(hex, alpha){
+    hex = String(hex).replace('#', '').trim();
+    if(hex.length === 3) hex = hex.split('').map(function(c){ return c + c; }).join('');
+    var r = parseInt(hex.substring(0, 2), 16);
+    var g = parseInt(hex.substring(2, 4), 16);
+    var b = parseInt(hex.substring(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+  function chartMetricText(finalVal, samples){
+    if(finalVal != null) return finalVal.toFixed(1) + ' Mbps';
+    if(samples && samples.length) return samples[samples.length - 1].toFixed(1) + ' Mbps';
+    return null;
+  }
+
 
   function drawSparkline(down, up){
     var dpr = window.devicePixelRatio || 1;
@@ -838,25 +899,44 @@
     canvas.height = ch * dpr;
     var w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
-    var all = (down || []).concat(up || []);
+    var smoothDown = smoothSeries(down);
+    var smoothUp = smoothSeries(up);
+    var all = smoothDown.concat(smoothUp);
     var max = all.length ? Math.max.apply(null, all) : 1;
     if(max <= 0) max = 1;
+    var baseline = h - h * 0.05;
+
     function drawSeries(arr, color){
       if(!arr || arr.length < 2) return;
+      var points = arr.map(function(v, idx){
+        return [
+          (idx / (arr.length - 1)) * w,
+          h - (v / max) * (h * 0.85) - h * 0.05
+        ];
+      });
+      var gradient = ctx.createLinearGradient(0, 0, 0, h);
+      gradient.addColorStop(0, hexToRgba(color, 0.25));
+      gradient.addColorStop(1, hexToRgba(color, 0));
+      ctx.beginPath();
+      ctx.moveTo(points[0][0], baseline);
+      points.forEach(function(p){ ctx.lineTo(p[0], p[1]); });
+      ctx.lineTo(points[points.length - 1][0], baseline);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
       ctx.beginPath();
       ctx.lineWidth = Math.max(1, 2 * dpr);
       ctx.strokeStyle = color;
       ctx.lineJoin = 'round';
-      arr.forEach(function(v, idx){
-        var x = (idx / (arr.length - 1)) * w;
-        var y = h - (v / max) * (h * 0.85) - h * 0.05;
-        if(idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      points.forEach(function(p, idx){
+        if(idx === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
       });
       ctx.stroke();
     }
     var styles = getComputedStyle(document.documentElement);
-    drawSeries(down, styles.getPropertyValue('--info').trim());
-    drawSeries(up, styles.getPropertyValue('--accent3').trim());
+    drawSeries(smoothDown, styles.getPropertyValue('--info').trim());
+    drawSeries(smoothUp, styles.getPropertyValue('--accent3').trim());
   }
 
   function renderSpeedtest(st){
@@ -892,6 +972,16 @@
       setText(statUp, st.upload_mbps != null ? st.upload_mbps.toFixed(1) + ' Mbps' : null);
     }
 
+    setText(liveDownVal, chartMetricText(st.download_mbps, st.download_samples));
+    if(!serverSupportsUpload(st)){
+      var upNotSupportedLive = 'not supported by this server';
+      if(liveUpVal.textContent !== upNotSupportedLive) liveUpVal.textContent = upNotSupportedLive;
+      liveUpVal.classList.add('muted-stat');
+    } else {
+      liveUpVal.classList.remove('muted-stat');
+      setText(liveUpVal, chartMetricText(st.upload_mbps, st.upload_samples));
+    }
+
     lastSpeedtestSamples = {down: st.download_samples || [], up: st.upload_samples || []};
     drawSparkline(lastSpeedtestSamples.down, lastSpeedtestSamples.up);
   }
@@ -907,24 +997,93 @@
 
   // ========== LOG ==========
   var logBody = $('#logBody');
-  var logDrawer = $('#logDrawer');
-  var logToggle = $('#logToggle');
-  var lastLogStr = '';
 
-  $('#logClose').addEventListener('click', function(){ logDrawer.classList.remove('open'); });
-  logToggle.addEventListener('click', function(){
-    logDrawer.classList.toggle('open');
-    if(logDrawer.classList.contains('open')) logBody.scrollTop = logBody.scrollHeight;
-  });
+  $('#logExportBtn').addEventListener('click', function(){ send({cmd: 'log_export'}); });
+  $('#logClearBtn').addEventListener('click', function(){ send({cmd: 'log_clear'}); });
+
+  function createLogRow(entry){
+    var row = document.createElement('div');
+    row.className = 'log-row';
+    row.innerHTML = '<span class="log-time mono"></span><span class="log-msg"></span>';
+    updateLogRow(row, entry);
+    return row;
+  }
+  function updateLogRow(row, entry){
+    setText(row.querySelector('.log-time'), (entry.ts || '').slice(11, 19));
+    setText(row.querySelector('.log-msg'), entry.message);
+  }
 
   function renderLog(log){
     log = log || [];
-    var str = log.join('\n');
-    if(str === lastLogStr) return;
-    lastLogStr = str;
     var wasAtBottom = (logBody.scrollTop + logBody.clientHeight >= logBody.scrollHeight - 24);
-    logBody.textContent = str;
+    // Keyed by position, not content: two entries can legitimately share the same
+    // second-precision timestamp *and* identical message text (e.g. two back-to-back
+    // "interfaces refreshed" lines), which would collide under a content-hash key and
+    // silently collapse into a single row. The index is guaranteed unique within one
+    // render call, so nothing is ever lost — the only cost is a full row rebuild on the
+    // rare occasion the log is long enough to trim from the front.
+    var indexed = log.map(function(e, i){ return { ts: e.ts, message: e.message, __idx: i }; });
+    reconcile(logBody, indexed, function(e){ return e.__idx; }, createLogRow, updateLogRow);
     if(wasAtBottom) logBody.scrollTop = logBody.scrollHeight;
+  }
+
+  // ========== UPDATE ==========
+  var checkUpdateBtn = $('#checkUpdateBtn');
+  var updateBanner = $('#updateBanner');
+  var updateBannerText = $('#updateBannerText');
+  var updateInstallBtn = $('#updateInstallBtn');
+  var updateDismissBtn = $('#updateDismissBtn');
+  var lastUpdateKey = null;
+  var uptodateFadeTimer = null;
+
+  checkUpdateBtn.addEventListener('click', function(){ send({cmd: 'check_for_update'}); });
+  updateInstallBtn.addEventListener('click', function(){ send({cmd: 'install_update'}); });
+  updateDismissBtn.addEventListener('click', function(){ updateBanner.hidden = true; });
+
+  function hideUpdateBanner(){
+    updateBanner.hidden = true;
+    updateBanner.className = 'update-banner';
+  }
+  function showUpdateBanner(kind, text, showInstall, showDismiss){
+    updateBanner.hidden = false;
+    updateBanner.className = 'update-banner ' + kind;
+    setText(updateBannerText, text);
+    updateBannerText.classList.toggle('error-text', kind === 'error');
+    updateInstallBtn.hidden = !showInstall;
+    updateDismissBtn.hidden = !showDismiss;
+  }
+
+  function renderUpdate(u){
+    u = u || {};
+    var checking = !!u.checking;
+    var installing = !!u.installing;
+
+    checkUpdateBtn.disabled = checking || installing;
+    var btnLabel = checking ? 'Checking…' : 'Check for Updates';
+    if(checkUpdateBtn.textContent !== btnLabel) checkUpdateBtn.textContent = btnLabel;
+
+    var key = JSON.stringify([checking, installing, !!u.update_available, u.error || null, u.latest_version || null]);
+    if(key === lastUpdateKey){
+      if(installing) showUpdateBanner('installing', 'Installing update, restarting shortly…', false, false);
+      return;
+    }
+    lastUpdateKey = key;
+    if(uptodateFadeTimer){ clearTimeout(uptodateFadeTimer); uptodateFadeTimer = null; }
+
+    if(installing){
+      showUpdateBanner('installing', 'Installing update, restarting shortly…', false, false);
+    } else if(checking){
+      hideUpdateBanner();
+    } else if(u.update_available){
+      showUpdateBanner('available', 'Update available: ' + u.latest_version, true, true);
+    } else if(u.error){
+      showUpdateBanner('error', u.error, false, true);
+    } else if(u.latest_version){
+      showUpdateBanner('uptodate', 'Up to date (' + u.latest_version + ')', false, false);
+      uptodateFadeTimer = setTimeout(function(){ hideUpdateBanner(); uptodateFadeTimer = null; }, 4000);
+    } else {
+      hideUpdateBanner();
+    }
   }
 
   // ========== dispatch ==========
@@ -934,6 +1093,7 @@
     renderTelnet(msg.telnet);
     renderSpeedtest(msg.speedtest);
     renderLog(msg.log);
+    renderUpdate(msg.update);
   }
 
   connect();

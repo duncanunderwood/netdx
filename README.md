@@ -12,9 +12,11 @@ terminal window and shows you, in real time:
 - **Telnet** — connect to another device or port and watch the full
   back-and-forth, exactly like a classic telnet terminal window.
 - **Speed test** — measure ping, jitter, packet loss, download and upload
-  speed, against a choice of 10 servers around the world (US, Europe,
-  Australia, and Asia), so you can tell whether a slowdown is local or
-  somewhere far down the line.
+  speed against Cloudflare's global network, with a live-updating chart as
+  the test runs.
+- **Event log** — every action netdx takes is timestamped and kept on
+  screen (the last 10 entries, scrollable further back), and can be
+  exported to a CSV file or cleared with one keypress/click.
 
 It also opens a **web page** you (or anyone else on the network, or a
 colleague on their phone) can visit to see and control the exact same
@@ -22,8 +24,11 @@ screens from a browser — with light and dark mode, and a QR code printed
 right in the terminal so a phone camera can jump straight to the page
 without typing anything.
 
-No sign-up, no subscription, no data sent anywhere except the diagnostic
-checks you explicitly run.
+netdx can check GitHub for newer releases on demand and install them
+in place (see [Checking for updates](#checking-for-updates)). It also sends
+a small amount of anonymous, aggregate usage analytics — see
+[SUPABASE.md](SUPABASE.md) for exactly what's sent and how to opt out with
+`--no-analytics`.
 
 ## Getting netdx
 
@@ -83,6 +88,29 @@ A line at the bottom of the terminal window always shows the web address
 (and a scannable QR code — press `w` to bring it up) so you can check the
 same screens from your phone or another computer on the network.
 
+
+## Checking for updates
+
+Press `u` in the terminal (or the **Check for Updates** button on the web
+page) to check GitHub for a newer release. If one's available, you'll see
+the version number with the option to install it — netdx downloads it,
+swaps itself out for the new version, and restarts automatically with the
+same settings you were already running with.
+
+## Event log
+
+Every screen shows the last 10 log entries at the bottom (older ones are
+one scroll away — `↑`/`↓` in the terminal, or just scroll the panel on the
+web page). Two actions are always available:
+
+- **Export** (`e` in the terminal, "Export CSV" on the web page) — writes
+  the full log, fully timestamped, to a CSV file you can open in Excel or
+  attach to a ticket. It's saved under netdx's application data folder:
+  `%LOCALAPPDATA%\netdx\logs` on Windows, `~/Library/Application
+  Support/netdx/logs` on macOS, `~/.local/share/netdx/logs` on Linux.
+- **Clear** (`C` in the terminal, "Clear" on the web page) — empties the
+  on-screen log. Doesn't touch any CSV files you've already exported.
+
 ## Speed test
 
 netdx tests ping, jitter, packet loss, download, and upload against
@@ -97,9 +125,13 @@ test files, so they aren't offered as options here).
 | `Tab` / `Shift+Tab` or `1`–`4` | Switch screens |
 | `Enter` | Start / confirm whatever you're on (start a traceroute, connect telnet, start a speed test) |
 | `n` | On the Speed Test screen, cycle to the next server |
+| `↑` / `↓` | Scroll the event log further back / forward |
+| `e` | Export the event log to CSV |
+| `C` | Clear the event log |
+| `u` | Check for updates |
 | `w` | Show/hide the QR code for the web page |
 | `r` | On the Overview screen, refresh your network info |
-| `Esc` | Cancel typing / close the QR code |
+| `Esc` | Cancel typing / close a popup |
 | `q` or `Ctrl+C` | Quit |
 
 ## Advanced / IT notes
@@ -138,6 +170,7 @@ netdx [OPTIONS]
 | `--no-web` | off | Don't start the web page — terminal only. |
 | `--web-bind <addr:port>` | `0.0.0.0:7878` | Address and port the web page listens on. |
 | `--web-token <token>` | auto-generated | Access code required to open the web page. A random one is generated and printed each time you start netdx unless you set your own. |
+| `--no-analytics` | off | Disable anonymous usage analytics (same as `NETDX_NO_ANALYTICS=1`) — see [SUPABASE.md](SUPABASE.md). |
 | `-h`, `--help` | — | Show help. |
 | `-V`, `--version` | — | Show version. |
 

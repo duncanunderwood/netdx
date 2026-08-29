@@ -14,7 +14,13 @@ pub fn draw(frame: &mut Frame, app: &App, state: &AppState) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(12),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
         .split(area);
 
     draw_tabs(frame, app, chunks[0]);
@@ -26,12 +32,90 @@ pub fn draw(frame: &mut Frame, app: &App, state: &AppState) {
         Tab::Speedtest => draw_speedtest(frame, app, state, chunks[1]),
     }
 
-    draw_status(frame, app, state, chunks[2]);
-    draw_footer(frame, chunks[3]);
+    draw_log_panel(frame, app, state, chunks[2]);
+    draw_status(frame, app, state, chunks[3]);
+    draw_footer(frame, chunks[4]);
 
     if app.show_qr {
         draw_qr_popup(frame, app, area);
     }
+    if app.show_update {
+        draw_update_popup(frame, state, area);
+    }
+}
+
+/// Shared event log, shown at the bottom of every tab: the latest 10 entries by default,
+/// scrollable further back with Up/Down when there are more than that.
+fn draw_log_panel(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
+    const VISIBLE: usize = 10;
+    let total = state.log.len();
+    let max_scroll = total.saturating_sub(VISIBLE);
+    let scroll = app.log_scroll.min(max_scroll);
+    let end = total.saturating_sub(scroll);
+    let start = end.saturating_sub(VISIBLE);
+
+    let lines: Vec<Line> = state
+        .log
+        .iter()
+        .skip(start)
+        .take(end - start)
+        .map(|entry| {
+            let time = entry.ts.get(11..19).unwrap_or(entry.ts.as_str());
+            Line::from(vec![
+                Span::styled(format!("{time} "), theme::muted_style()),
+                Span::raw(entry.message.clone()),
+            ])
+        })
+        .collect();
+
+    let title = if total > VISIBLE {
+        format!(" Event Log ({}-{} of {total}) — \u{2191}/\u{2193} scroll · e export CSV · C clear ", start + 1, end)
+    } else {
+        " Event Log — e export CSV · C clear ".to_string()
+    };
+    let block = Block::default().borders(Borders::ALL).title(title);
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn draw_update_popup(frame: &mut Frame, state: &AppState, area: Rect) {
+    let up = &state.update;
+    let popup = centered_fixed_rect(60, 9, area);
+    frame.render_widget(Clear, popup);
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("Current version: ", theme::muted_style()),
+            Span::raw(up.current_version.clone()),
+        ]),
+        Line::raw(""),
+    ];
+    if up.installing {
+        lines.push(Line::from(Span::styled("Installing update and restarting…", theme::warn_style())));
+    } else if up.checking {
+        lines.push(Line::from(Span::styled("Checking for updates…", theme::warn_style())));
+    } else if let Some(err) = &up.error {
+        lines.push(Line::from(Span::styled(format!("Error: {err}"), theme::bad_style())));
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled("Esc to close", theme::muted_style())));
+    } else if up.update_available {
+        lines.push(Line::from(vec![
+            Span::styled("Update available: ", theme::ok_style()),
+            Span::raw(up.latest_version.clone().unwrap_or_default()),
+        ]));
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled("Enter/i to install and restart · Esc to close", theme::muted_style())));
+    } else if up.latest_version.is_some() {
+        lines.push(Line::from(Span::styled("You're on the latest version.", theme::ok_style())));
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled("Esc to close", theme::muted_style())));
+    } else {
+        lines.push(Line::from(Span::styled("Press u to check for an update.", theme::muted_style())));
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled("Esc to close", theme::muted_style())));
+    }
+
+    let block = Block::default().borders(Borders::ALL).title(" netdx updates — Esc to close ").style(theme::fg_style());
+    frame.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
 pub const FOOTER_PREFIX: &str = "Developed by MyEvent Labs — ";
@@ -109,14 +193,8 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(tabs, area);
 }
 
-fn draw_status(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
-    let hint = app.status_hint();
-    let last_log = state.log.back().cloned().unwrap_or_default();
-    let line = Line::from(vec![
-        Span::styled(hint, theme::muted_style()),
-        Span::raw("   "),
-        Span::styled(last_log, theme::muted_style()),
-    ]);
+fn draw_status(frame: &mut Frame, app: &App, _state: &AppState, area: Rect) {
+    let line = Line::from(Span::styled(app.status_hint(), theme::muted_style()));
     frame.render_widget(Paragraph::new(line), area);
 }
 
@@ -361,20 +439,16 @@ fn draw_speedtest(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
         chunks[0],
     );
 
-    let dl_points: Vec<(f64, f64)> = sp.download_samples.iter().enumerate().map(|(i, v)| (i as f64, *v)).collect();
-    let dl_title = format!(
-        " Download {} ",
-        sp.download_mbps.map(|m| format!("{m:.1} Mbps avg")).unwrap_or_else(|| "…".to_string())
-    );
-    frame.render_widget(braille_chart(dl_title, &sp.download_samples, &dl_points, theme::INFO), chunks[1]);
+    let dl_smoothed = smooth(&sp.download_samples, 3);
+    let dl_points: Vec<(f64, f64)> = dl_smoothed.iter().enumerate().map(|(i, v)| (i as f64, *v)).collect();
+    let dl_title = format!(" Download {} ", live_or_avg(sp.download_mbps, sp.download_samples.last().copied()));
+    frame.render_widget(braille_chart(dl_title, &dl_smoothed, &dl_points, theme::INFO), chunks[1]);
 
     if supports_upload {
-        let ul_points: Vec<(f64, f64)> = sp.upload_samples.iter().enumerate().map(|(i, v)| (i as f64, *v)).collect();
-        let ul_title = format!(
-            " Upload {} ",
-            sp.upload_mbps.map(|m| format!("{m:.1} Mbps avg")).unwrap_or_else(|| "…".to_string())
-        );
-        frame.render_widget(braille_chart(ul_title, &sp.upload_samples, &ul_points, theme::ACCENT3), chunks[2]);
+        let ul_smoothed = smooth(&sp.upload_samples, 3);
+        let ul_points: Vec<(f64, f64)> = ul_smoothed.iter().enumerate().map(|(i, v)| (i as f64, *v)).collect();
+        let ul_title = format!(" Upload {} ", live_or_avg(sp.upload_mbps, sp.upload_samples.last().copied()));
+        frame.render_widget(braille_chart(ul_title, &ul_smoothed, &ul_points, theme::ACCENT3), chunks[2]);
     } else {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
@@ -397,6 +471,33 @@ fn draw_speedtest(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
         Span::raw(sp.packet_loss_pct.map(|v| format!("{v:.0}%")).unwrap_or_else(|| "-".to_string())),
     ]);
     frame.render_widget(Paragraph::new(stats).block(Block::default().borders(Borders::ALL).title(" Latency ")), chunks[3]);
+}
+
+/// Centered moving-average over a short window: each raw sample is an instantaneous ~200ms
+/// reading and inherently jittery, so plotting them straight produces a jagged zigzag. A short
+/// average flattens that into a readable trend without hiding real trend direction.
+fn smooth(samples: &[f64], window: usize) -> Vec<f64> {
+    if window <= 1 || samples.len() <= 1 {
+        return samples.to_vec();
+    }
+    (0..samples.len())
+        .map(|i| {
+            let lo = i.saturating_sub(window / 2);
+            let hi = (i + window / 2 + 1).min(samples.len());
+            let slice = &samples[lo..hi];
+            slice.iter().sum::<f64>() / slice.len() as f64
+        })
+        .collect()
+}
+
+/// Label for a speedtest chart title: the final average once the phase has finished, otherwise
+/// the most recent raw sample so the number on screen updates live while the test is running.
+fn live_or_avg(avg: Option<f64>, current: Option<f64>) -> String {
+    match (avg, current) {
+        (Some(avg), _) => format!("{avg:.1} Mbps avg"),
+        (None, Some(cur)) => format!("{cur:.1} Mbps (live)"),
+        (None, None) => "…".to_string(),
+    }
 }
 
 /// A high-resolution line chart using Unicode Braille Patterns (2x4 sub-cell dots per terminal

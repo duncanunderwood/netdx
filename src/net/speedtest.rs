@@ -18,9 +18,17 @@ const PING_ATTEMPTS: usize = 6;
 const DOWNLOAD_TIME_BUDGET: Duration = Duration::from_secs(10);
 const UPLOAD_TIME_BUDGET: Duration = Duration::from_secs(10);
 const SAMPLE_INTERVAL: Duration = Duration::from_millis(200);
-/// Kept safely under Cloudflare's undocumented per-request cap (empirically: 80MB succeeds,
-/// 100MB returns 403) and generally reduces request *count*, which is what trips rate limits.
-const CLOUDFLARE_CHUNK_BYTES: u64 = 45_000_000;
+/// Progressive download sizes: small requests first (accurate quickly on slow links, and gets a
+/// sample on screen fast) ramping up to large ones (fewer, bigger requests dominate the average
+/// on fast links, where a 10MB chunk would round-trip in a fraction of a second and mostly
+/// measure request overhead rather than throughput). Cycles through in order, holding at the
+/// largest size for the remainder of `DOWNLOAD_TIME_BUDGET` once reached. All four sizes are
+/// requested via Cloudflare's `?bytes=N` endpoint, which accepts any size up to its ~80MB
+/// practical cap in one shot — kept under that per single request below.
+const DOWNLOAD_SIZES_BYTES: [u64; 4] = [10_000_000, 25_000_000, 50_000_000, 100_000_000];
+/// Cloudflare's `__down` endpoint 403s above roughly 80MB in a single request (undocumented,
+/// found empirically) — any tier larger than this is split into multiple requests instead.
+const MAX_SINGLE_REQUEST_BYTES: u64 = 75_000_000;
 const UPLOAD_CHUNK_BYTES: usize = 20 * 1024 * 1024;
 /// Small proactive gap between requests to the same server, on top of reactive 429 backoff —
 /// keeps a very fast connection (which would otherwise fire off a chunk request every few tens
@@ -176,24 +184,50 @@ fn summarize(samples: Vec<Option<f64>>) -> PingResult {
     PingResult { ping_ms: Some(avg), jitter_ms, loss_pct }
 }
 
+/// Flattens `DOWNLOAD_SIZES_BYTES` into a sequence of individual HTTP request sizes, splitting
+/// any tier above `MAX_SINGLE_REQUEST_BYTES` into multiple back-to-back requests (the byte
+/// stream is summed continuously across request boundaries for sampling purposes, so this is
+/// transparent to the caller) — reaches the nominal 100MB tier's total transfer volume without
+/// tripping Cloudflare's undocumented single-request cap.
+fn download_request_sizes() -> Vec<u64> {
+    let mut sizes = Vec::new();
+    for &tier in &DOWNLOAD_SIZES_BYTES {
+        let mut remaining = tier;
+        while remaining > 0 {
+            let chunk = remaining.min(MAX_SINGLE_REQUEST_BYTES);
+            sizes.push(chunk);
+            remaining -= chunk;
+        }
+    }
+    sizes
+}
+
 /// Streams downloads for up to `DOWNLOAD_TIME_BUDGET`, calling `on_sample` with an instantaneous
 /// Mbps reading roughly every `SAMPLE_INTERVAL`. Returns the overall average Mbps.
 pub async fn measure_download(server: ServerId, mut on_sample: impl FnMut(f64)) -> Result<f64, String> {
     let _ = server; // kept for API symmetry with measure_ping; only one server exists today
     let client = build_client()?;
-    let url = format!("https://speed.cloudflare.com/__down?bytes={CLOUDFLARE_CHUNK_BYTES}");
+    let sizes = download_request_sizes();
 
     let start = Instant::now();
     let mut total: u64 = 0;
     let mut last_sample_at = start;
     let mut last_sample_bytes: u64 = 0;
     let mut first_request = true;
+    let mut idx = 0usize;
 
     while start.elapsed() < DOWNLOAD_TIME_BUDGET {
         if !first_request {
             tokio::time::sleep(INTER_REQUEST_GAP).await;
         }
         first_request = false;
+
+        // Once every tier has been requested once, keep re-requesting the largest safe chunk
+        // size for the rest of the time budget — needed so a fast connection keeps being
+        // measured at a size large enough that request overhead doesn't dominate the reading.
+        let bytes = sizes.get(idx).copied().unwrap_or(MAX_SINGLE_REQUEST_BYTES);
+        idx += 1;
+        let url = format!("https://speed.cloudflare.com/__down?bytes={bytes}");
 
         let resp = send_with_retry(|| client.get(&url)).await?;
 
