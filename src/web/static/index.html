@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>netdx</title>
+<script>
+(function(){
+  try{
+    var t = localStorage.getItem('netdx-theme');
+    if(t === 'light' || t === 'dark'){ document.documentElement.dataset.theme = t; }
+  }catch(e){}
+})();
+</script>
+<style>
+  :root{
+    --ok:#009E73;
+    --warn:#E69F00;
+    --bad:#D55E00;
+    --info:#0072B2;
+    --accent2:#56B4E9;
+    --accent3:#CC79A7;
+    --fg:#1a1a1a;
+    --bg:#f5f5f5;
+    --card-bg:#ffffff;
+    --border:#dcdcdc;
+    --muted:#666666;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --fg:#f0f0f0;
+      --bg:#121212;
+      --card-bg:#1c1c1c;
+      --border:#333333;
+      --muted:#a0a0a0;
+    }
+  }
+  :root[data-theme="dark"]{
+    --fg:#f0f0f0;
+    --bg:#121212;
+    --card-bg:#1c1c1c;
+    --border:#333333;
+    --muted:#a0a0a0;
+  }
+  :root[data-theme="light"]{
+    --fg:#1a1a1a;
+    --bg:#f5f5f5;
+    --card-bg:#ffffff;
+    --border:#dcdcdc;
+    --muted:#666666;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button{font:inherit;}
+  [hidden]{display:none !important;}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;}
+
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:.5rem;flex-wrap:wrap;
+    padding:.7rem 1rem;
+    border-bottom:1px solid var(--border);
+    background:var(--card-bg);
+    position:sticky;top:0;z-index:10;
+  }
+  header h1{font-size:1.05rem;margin:0;letter-spacing:.03em;}
+  .header-right{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
+
+  .pill{
+    display:inline-flex;align-items:center;gap:.4rem;
+    padding:.3rem .7rem;border-radius:999px;
+    font-size:.78rem;font-weight:700;
+    border:1px solid var(--border);
+    background:var(--bg);white-space:nowrap;
+  }
+  .pill .dot{width:.55rem;height:.55rem;border-radius:50%;flex:0 0 auto;background:currentColor;}
+  .pill.ok{color:var(--ok);border-color:var(--ok);}
+  .pill.warn{color:var(--warn);border-color:var(--warn);}
+  .pill.bad{color:var(--bad);border-color:var(--bad);}
+  .pill.info{color:var(--info);border-color:var(--info);}
+  .pill.info .dot{animation:pulse 1.2s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+  .theme-toggle-btn{
+    display:inline-flex;align-items:center;gap:.35rem;
+    min-height:40px;padding:.35rem .7rem;
+    border-radius:999px;border:1px solid var(--border);
+    background:var(--bg);color:var(--fg);
+    font-size:.78rem;font-weight:700;cursor:pointer;
+    transition:color .15s ease, border-color .15s ease;
+  }
+  .theme-toggle-btn:hover{border-color:var(--info);color:var(--info);}
+  .theme-toggle-btn .theme-glyph{font-size:.95rem;line-height:1;}
+
+  nav.tabs{
+    display:flex;overflow-x:auto;
+    border-bottom:1px solid var(--border);
+    background:var(--card-bg);
+  }
+  nav.tabs button{
+    flex:1 0 auto;min-width:88px;min-height:44px;
+    padding:.7rem .5rem;
+    background:none;border:none;
+    color:var(--muted);
+    font-size:.82rem;font-weight:700;letter-spacing:.01em;
+    cursor:pointer;
+    border-bottom:3px solid transparent;
+    transition:color .15s ease, border-color .15s ease;
+  }
+  nav.tabs button.active{color:var(--info);border-bottom-color:var(--info);}
+  nav.tabs button:hover{color:var(--fg);}
+
+  main{flex:1;padding:1rem;max-width:1100px;width:100%;margin:0 auto;}
+  section.tabpanel{display:none;}
+  section.tabpanel.active{display:block;animation:fadein .15s ease;}
+  @keyframes fadein{from{opacity:0;}to{opacity:1;}}
+
+  .card{
+    background:var(--card-bg);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:1rem;
+    margin-bottom:1rem;
+  }
+  .card.default{border-color:var(--info);box-shadow:0 0 0 1px var(--info) inset;}
+  .grid-ifaces{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;}
+
+  .iface-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem;flex-wrap:wrap;}
+  .iface-title{display:flex;flex-direction:column;}
+  .iface-name{font-weight:700;font-size:1rem;}
+  .iface-friendly{color:var(--muted);font-size:.8rem;}
+  .iface-tags{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.5rem;}
+  .tag{font-size:.65rem;font-weight:700;padding:.18rem .45rem;border-radius:5px;letter-spacing:.03em;}
+  .tag-default{color:var(--info);border:1px solid var(--info);background:rgba(0,114,178,.1);}
+  .tag-loop{color:var(--muted);border:1px solid var(--border);}
+
+  .badge{
+    display:inline-flex;align-items:center;gap:.3rem;
+    padding:.2rem .55rem;border-radius:6px;
+    font-size:.72rem;font-weight:700;letter-spacing:.03em;
+    border:1px solid currentColor;flex:0 0 auto;
+  }
+  .badge.up{color:var(--ok);}
+  .badge.down{color:var(--bad);}
+  .badge .glyph{font-weight:900;font-size:.7rem;}
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:.3rem .75rem;font-size:.83rem;margin:.6rem 0 0;}
+  .kv dt{color:var(--muted);}
+  .kv dd{margin:0;word-break:break-all;}
+
+  .controls{display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin-bottom:1rem;}
+  .field{display:flex;flex-direction:column;gap:.25rem;font-size:.78rem;color:var(--muted);}
+  .status-line{display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:.6rem;font-size:.88rem;}
+
+  input[type=text],input[type=number],select{
+    min-height:42px;padding:.4rem .6rem;
+    border:1px solid var(--border);border-radius:8px;
+    background:var(--bg);color:var(--fg);font-size:16px;
+    min-width:0;
+  }
+  input:disabled,select:disabled{opacity:.55;}
+
+  button.btn{
+    min-height:42px;padding:.5rem 1.15rem;border-radius:8px;
+    border:1px solid var(--info);background:var(--info);color:#fff;
+    font-weight:700;font-size:.85rem;cursor:pointer;
+    transition:opacity .15s ease;
+  }
+  button.btn.secondary{background:none;color:var(--info);}
+  button.btn.danger{background:var(--bad);border-color:var(--bad);}
+  button.btn.danger.secondary{background:none;color:var(--bad);}
+  button.btn:disabled{opacity:.45;cursor:not-allowed;}
+  button.btn:not(:disabled):active{opacity:.8;}
+
+  .error-text{color:var(--bad);font-weight:700;font-size:.85rem;margin:.25rem 0 .8rem;}
+
+  table.hops{width:100%;border-collapse:collapse;font-size:.85rem;}
+  table.hops th{text-align:left;padding:.4rem .5rem;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);}
+  table.hops td{padding:.45rem .5rem;border-bottom:1px solid var(--border);vertical-align:middle;}
+  table.hops tr.hop-timeout td{color:var(--bad);}
+  .rtt-meter{display:flex;align-items:center;gap:.5rem;min-width:140px;}
+  .rtt-meter .rtt-val{flex:0 0 auto;width:4.5em;}
+  .rtt-meter .bar-track{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
+  .rtt-meter .bar-fill{height:100%;width:0;background:var(--info);transition:width .2s ease;}
+
+  .terminal{
+    background:#0b0b0b;color:#d7d7d7;
+    border-radius:8px;padding:.75rem;
+    height:min(50vh,420px);overflow-y:auto;
+    white-space:pre-wrap;word-break:break-all;
+    font-size:.8rem;line-height:1.35;
+  }
+  .terminal-input-row{display:flex;gap:.5rem;margin-top:.6rem;}
+  .terminal-input-row input{flex:1;}
+
+  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;margin-top:1rem;}
+  .stat{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:.7rem;text-align:center;}
+  .stat .label{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .stat .value{font-size:1.3rem;font-weight:700;margin-top:.2rem;}
+  .stat .value.muted-stat{font-size:.82rem;font-weight:600;color:var(--muted);}
+  #spark{width:100%;height:160px;display:block;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;}
+
+  .log-toggle-btn{
+    position:fixed;right:1rem;bottom:1rem;z-index:20;
+    min-height:44px;min-width:44px;padding:.5rem 1rem;
+    border-radius:999px;border:1px solid var(--info);
+    background:var(--card-bg);color:var(--info);font-weight:700;
+    cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.2);
+  }
+  .log-drawer{
+    position:fixed;right:1rem;left:1rem;bottom:4.5rem;max-width:640px;margin-left:auto;
+    max-height:45vh;
+    background:var(--card-bg);border:1px solid var(--border);border-radius:10px;
+    display:flex;flex-direction:column;overflow:hidden;
+    transform:translateY(16px);opacity:0;pointer-events:none;
+    transition:transform .15s ease, opacity .15s ease;
+    z-index:20;box-shadow:0 4px 20px rgba(0,0,0,.25);
+  }
+  .log-drawer.open{transform:translateY(0);opacity:1;pointer-events:auto;}
+  .log-drawer-head{display:flex;justify-content:space-between;align-items:center;padding:.55rem .8rem;border-bottom:1px solid var(--border);font-weight:700;font-size:.83rem;}
+  .log-drawer-head button{background:none;border:none;font-size:1.2rem;line-height:1;cursor:pointer;color:var(--muted);min-width:32px;min-height:32px;}
+  .log-body{overflow-y:auto;padding:.5rem .8rem;font-size:.74rem;white-space:pre-wrap;}
+  footer.site-footer{
+    text-align:center;
+    padding:1rem 1rem 5rem;
+    font-size:.78rem;
+    color:var(--muted);
+  }
+  footer.site-footer a{
+    color:var(--muted);
+    text-decoration:underline;
+    transition:color .15s ease;
+  }
+  footer.site-footer a:hover{color:var(--info);}
+
+  @media (max-width:520px){
+    header h1{font-size:.95rem;}
+    nav.tabs button{font-size:.76rem;min-width:70px;}
+    .status-line{gap:.7rem;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>netdx</h1>
+  <div class="header-right">
+    <button id="themeToggle" class="theme-toggle-btn" type="button" aria-label="Toggle colour theme">
+      <span class="theme-glyph" aria-hidden="true"></span><span class="theme-label"></span>
+    </button>
+    <div id="statusPill" class="pill info" role="status" aria-live="polite">
+      <span class="dot"></span><span id="statusText">Connecting…</span>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab-btn active" data-tab="overview" role="tab" aria-selected="true" type="button">Overview</button>
+  <button class="tab-btn" data-tab="traceroute" role="tab" aria-selected="false" type="button">Traceroute</button>
+  <button class="tab-btn" data-tab="telnet" role="tab" aria-selected="false" type="button">Telnet</button>
+  <button class="tab-btn" data-tab="speedtest" role="tab" aria-selected="false" type="button">Speed Test</button>
+</nav>
+
+<main>
+
+  <section id="tab-overview" class="tabpanel active" role="tabpanel">
+    <div class="controls">
+      <div><strong>Default interface:</strong> <span id="defaultIfaceName" class="mono">—</span></div>
+      <div><strong>Public IP:</strong> <span id="publicIp" class="mono">—</span></div>
+      <button class="btn secondary" id="refreshIfacesBtn" type="button">Refresh</button>
+    </div>
+    <div id="ifaceGrid" class="grid-ifaces"></div>
+  </section>
+
+  <section id="tab-traceroute" class="tabpanel" role="tabpanel">
+    <div class="controls">
+      <div class="field">
+        <label for="trTarget">Target</label>
+        <input type="text" id="trTarget" class="mono" placeholder="8.8.8.8 or example.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="field" style="max-width:100px;">
+        <label for="trMaxHops">Max hops</label>
+        <input type="number" id="trMaxHops" min="1" max="64" value="30">
+      </div>
+      <button class="btn" id="trStartBtn" type="button">Start</button>
+      <button class="btn danger secondary" id="trStopBtn" type="button" disabled>Stop</button>
+    </div>
+    <div class="status-line">
+      <span><strong>Status:</strong> <span id="trStatusText" class="mono">Idle</span></span>
+      <span><strong>Resolved:</strong> <span id="trResolved" class="mono">—</span></span>
+    </div>
+    <p id="trError" class="error-text" hidden></p>
+    <div class="card" style="overflow-x:auto;">
+      <table class="hops">
+      <thead><tr><th>TTL</th><th>Address</th><th>Hostname</th><th>Location</th><th>RTT</th></tr></thead>
+        <tbody id="hopsBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-telnet" class="tabpanel" role="tabpanel">
+    <div class="controls">
+      <div class="field">
+        <label for="tnHost">Host</label>
+        <input type="text" id="tnHost" class="mono" placeholder="192.168.1.1" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="field" style="max-width:100px;">
+        <label for="tnPort">Port</label>
+        <input type="number" id="tnPort" min="1" max="65535" value="23">
+      </div>
+      <button class="btn" id="tnConnectBtn" type="button">Connect</button>
+      <button class="btn danger secondary" id="tnDisconnectBtn" type="button" disabled>Disconnect</button>
+      <span id="tnStatusPill" class="pill bad">
+        <span class="dot"></span><span id="tnStatusText">Disconnected</span>
+      </span>
+    </div>
+    <p id="tnError" class="error-text" hidden></p>
+    <div id="tnTerminal" class="terminal mono" aria-live="polite"></div>
+    <div class="terminal-input-row">
+      <input type="text" id="tnInput" class="mono" placeholder="Type and press Enter to send" autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
+    </div>
+  </section>
+
+  <section id="tab-speedtest" class="tabpanel" role="tabpanel">
+    <div class="controls">
+      <button class="btn" id="stStartBtn" type="button" data-running="0">Start Test</button>
+      <span id="stStage" class="pill info">
+        <span class="dot"></span><span id="stStageText">Idle</span>
+      </span>
+      <div class="field">
+        <label for="stServerSelect">Server</label>
+        <select id="stServerSelect" class="mono"></select>
+      </div>
+    </div>
+    <p id="stError" class="error-text" hidden></p>
+    <canvas id="spark"></canvas>
+    <div class="stats-grid">
+      <div class="stat"><div class="label">Ping</div><div class="value" id="statPing">—</div></div>
+      <div class="stat"><div class="label">Jitter</div><div class="value" id="statJitter">—</div></div>
+      <div class="stat"><div class="label">Packet loss</div><div class="value" id="statLoss">—</div></div>
+      <div class="stat"><div class="label">Download</div><div class="value" id="statDown">—</div></div>
+      <div class="stat"><div class="label">Upload</div><div class="value" id="statUp">—</div></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">Developed by <a href="https://myevent-labs.io" target="_blank" rel="noopener noreferrer">MyEvent Labs</a></footer>
+
+<button id="logToggle" class="log-toggle-btn" type="button" title="Activity log">Log</button>
+<div id="logDrawer" class="log-drawer">
+  <div class="log-drawer-head">
+    <span>Activity Log</span>
+    <button id="logClose" type="button" aria-label="Close log">&times;</button>
+  </div>
+  <div id="logBody" class="log-body mono"></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var qs = new URLSearchParams(location.search);
+  var token = qs.get('token') || '';
+  var wsProto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  var wsUrl = wsProto + location.host + '/ws?token=' + encodeURIComponent(token);
+
+  var $ = function(sel, root){ return (root || document).querySelector(sel); };
+  var $all = function(sel, root){ return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+
+  // ---------- theme (light/dark/system) ----------
+  var THEME_KEY = 'netdx-theme';
+  var themeToggle = $('#themeToggle');
+  var themeGlyphEl = themeToggle.querySelector('.theme-glyph');
+  var themeLabelEl = themeToggle.querySelector('.theme-label');
+
+  function getStoredThemePref(){
+    var v = null;
+    try{ v = localStorage.getItem(THEME_KEY); }catch(e){}
+    return (v === 'light' || v === 'dark') ? v : 'system';
+  }
+  function systemPrefersDark(){
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function effectiveTheme(pref){
+    return (pref === 'light' || pref === 'dark') ? pref : (systemPrefersDark() ? 'dark' : 'light');
+  }
+  function updateThemeButton(pref){
+    var eff = effectiveTheme(pref);
+    var glyph = eff === 'dark' ? '\u263E' : '\u2600';
+    var label = eff === 'dark' ? 'Dark' : 'Light';
+    if(pref === 'system') label += ' (auto)';
+    if(themeGlyphEl.textContent !== glyph) themeGlyphEl.textContent = glyph;
+    if(themeLabelEl.textContent !== label) themeLabelEl.textContent = label;
+    var title = 'Theme: ' + (pref === 'system' ? ('System — currently ' + (eff === 'dark' ? 'Dark' : 'Light')) : (eff === 'dark' ? 'Dark' : 'Light')) + ' (click to change)';
+    if(themeToggle.title !== title) themeToggle.title = title;
+  }
+  function applyThemePref(pref){
+    if(pref === 'light' || pref === 'dark'){ document.documentElement.dataset.theme = pref; }
+    else { delete document.documentElement.dataset.theme; }
+    updateThemeButton(pref);
+  }
+
+  var currentThemePref = getStoredThemePref();
+  updateThemeButton(currentThemePref);
+
+  themeToggle.addEventListener('click', function(){
+    currentThemePref = currentThemePref === 'system' ? 'light' : (currentThemePref === 'light' ? 'dark' : 'system');
+    try{
+      if(currentThemePref === 'system') localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, currentThemePref);
+    }catch(e){}
+    applyThemePref(currentThemePref);
+  });
+
+  if(window.matchMedia){
+    var themeMq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onSystemThemeChange = function(){ if(currentThemePref === 'system') updateThemeButton(currentThemePref); };
+    if(themeMq.addEventListener) themeMq.addEventListener('change', onSystemThemeChange);
+    else if(themeMq.addListener) themeMq.addListener(onSystemThemeChange);
+  }
+
+  // ---------- tab switching ----------
+  var tabButtons = $all('.tab-btn');
+  var tabPanels = {
+    overview: $('#tab-overview'),
+    traceroute: $('#tab-traceroute'),
+    telnet: $('#tab-telnet'),
+    speedtest: $('#tab-speedtest')
+  };
+  tabButtons.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var name = btn.dataset.tab;
+      tabButtons.forEach(function(b){
+        var active = b === btn;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      Object.keys(tabPanels).forEach(function(k){
+        tabPanels[k].classList.toggle('active', k === name);
+      });
+      if(name === 'speedtest'){ drawSparkline(lastSpeedtestSamples.down, lastSpeedtestSamples.up); }
+    });
+  });
+
+  // ---------- websocket with reconnect/backoff ----------
+  var ws = null;
+  var backoff = 1000;
+  var BACKOFF_MAX = 20000;
+  var reconnectTimer = null;
+  var deliberateClose = false;
+
+  var statusPill = $('#statusPill');
+  var statusText = $('#statusText');
+  function setStatus(cls, text){
+    statusPill.className = 'pill ' + cls;
+    statusText.textContent = text;
+  }
+
+  function connect(){
+    setStatus('info', backoff > 1000 ? 'Reconnecting…' : 'Connecting…');
+    try{
+      ws = new WebSocket(wsUrl);
+    }catch(e){
+      scheduleReconnect();
+      return;
+    }
+    ws.onopen = function(){
+      backoff = 1000;
+      setStatus('ok', 'Connected');
+    };
+    ws.onmessage = function(evt){
+      var msg;
+      try{ msg = JSON.parse(evt.data); }catch(e){ return; }
+      if(msg && msg.type === 'state'){ applyState(msg); }
+    };
+    ws.onclose = function(){
+      if(deliberateClose) return;
+      setStatus('bad', 'Disconnected');
+      scheduleReconnect();
+    };
+    ws.onerror = function(){ /* onclose follows */ };
+  }
+
+  function scheduleReconnect(){
+    if(reconnectTimer) return;
+    var delay = backoff;
+    backoff = Math.min(BACKOFF_MAX, Math.floor(backoff * 1.7));
+    setStatus('warn', 'Reconnecting in ' + Math.round(delay / 1000) + 's');
+    reconnectTimer = setTimeout(function(){
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  }
+
+  function send(obj){
+    if(ws && ws.readyState === WebSocket.OPEN){
+      ws.send(JSON.stringify(obj));
+      return true;
+    }
+    return false;
+  }
+
+  window.addEventListener('beforeunload', function(){
+    deliberateClose = true;
+    if(ws) ws.close();
+  });
+
+  // ---------- generic keyed list reconciliation (no full re-render / no flicker) ----------
+  function reconcile(container, items, keyFn, createFn, updateFn){
+    var existing = {};
+    Array.prototype.forEach.call(container.children, function(node){
+      existing[node.dataset.key] = node;
+    });
+    var seen = {};
+    var prev = null;
+    items.forEach(function(item){
+      var key = String(keyFn(item));
+      seen[key] = true;
+      var node = existing[key];
+      if(!node){
+        node = createFn(item);
+        node.dataset.key = key;
+      } else {
+        updateFn(node, item);
+      }
+      if(prev === null){
+        if(container.firstChild !== node) container.insertBefore(node, container.firstChild);
+      } else if(prev.nextSibling !== node){
+        container.insertBefore(node, prev.nextSibling);
+      }
+      prev = node;
+    });
+    Object.keys(existing).forEach(function(key){
+      if(!seen[key]) container.removeChild(existing[key]);
+    });
+  }
+
+  function setText(el, text){
+    var t = (text === null || text === undefined || text === '') ? '—' : String(text);
+    if(el.textContent !== t) el.textContent = t;
+  }
+  function setError(el, text){
+    if(!text){ el.hidden = true; return; }
+    el.hidden = false;
+    var t = '⚠ ' + text;
+    if(el.textContent !== t) el.textContent = t;
+  }
+
+  // Non-reversible short key so raw values (e.g. Windows GUID interface
+  // identifiers) never leak into the DOM via data-key attributes.
+  function hashKey(str){
+    str = String(str === null || str === undefined ? '' : str);
+    var h = 5381;
+    for(var i = 0; i < str.length; i++){
+      h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+    }
+    return h.toString(36);
+  }
+
+  // ========== OVERVIEW ==========
+  var defaultIfaceName = $('#defaultIfaceName');
+  var publicIpEl = $('#publicIp');
+  var ifaceGrid = $('#ifaceGrid');
+
+  $('#refreshIfacesBtn').addEventListener('click', function(){
+    send({cmd: 'refresh_interfaces'});
+  });
+
+  function fmtBytes(n){
+    if(n === null || n === undefined) return '—';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = 0, v = n;
+    while(v >= 1024 && i < units.length - 1){ v /= 1024; i++; }
+    return v.toFixed(v < 10 && i > 0 ? 1 : 0) + ' ' + units[i];
+  }
+  function ipList(arr){
+    if(!arr || !arr.length) return '—';
+    return arr.map(function(x){ return x.addr + '/' + x.prefix_len; }).join(', ');
+  }
+
+  function createIfaceCard(iface){
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML =
+      '<div class="iface-head">' +
+        '<div class="iface-title">' +
+        '<span class="iface-name"></span>' +
+        '<span class="iface-friendly mono"></span>' +
+        '</div>' +
+        '<span class="badge"><span class="glyph"></span>&nbsp;<span class="badge-text"></span></span>' +
+      '</div>' +
+      '<div class="iface-tags"></div>' +
+      '<dl class="kv">' +
+        '<dt>Type</dt><dd class="f-type"></dd>' +
+        '<dt>MAC</dt><dd class="f-mac mono"></dd>' +
+        '<dt>MTU</dt><dd class="f-mtu"></dd>' +
+        '<dt>IPv4</dt><dd class="f-ipv4 mono"></dd>' +
+        '<dt>IPv6</dt><dd class="f-ipv6 mono"></dd>' +
+        '<dt>Gateway</dt><dd class="f-gw mono"></dd>' +
+        '<dt>DNS</dt><dd class="f-dns mono"></dd>' +
+        '<dt>RX / TX</dt><dd class="f-bytes mono"></dd>' +
+      '</dl>';
+    updateIfaceCard(card, iface);
+    return card;
+  }
+
+  function updateIfaceCard(card, iface){
+    card.classList.toggle('default', !!iface.is_default);
+    setText(card.querySelector('.iface-name'), iface.display_name);
+    var friendly = card.querySelector('.iface-friendly');
+    var friendlyText = iface.system_name ? iface.system_name : '';
+    if(friendly.textContent !== friendlyText) friendly.textContent = friendlyText;
+
+    var badge = card.querySelector('.badge');
+    badge.classList.toggle('up', !!iface.is_up);
+    badge.classList.toggle('down', !iface.is_up);
+    setText(badge.querySelector('.glyph'), iface.is_up ? '\u25CF' : '\u25CB');
+    setText(badge.querySelector('.badge-text'), iface.is_up ? 'UP' : 'DOWN');
+
+    var tags = card.querySelector('.iface-tags');
+    var tagHtml = '';
+    if(iface.is_default) tagHtml += '<span class="tag tag-default">&#9733; DEFAULT</span>';
+    if(iface.is_loopback) tagHtml += '<span class="tag tag-loop">LOOPBACK</span>';
+    if(tags.innerHTML !== tagHtml) tags.innerHTML = tagHtml;
+
+    setText(card.querySelector('.f-type'), iface.if_type);
+    setText(card.querySelector('.f-mac'), iface.mac);
+    setText(card.querySelector('.f-mtu'), iface.mtu);
+    setText(card.querySelector('.f-ipv4'), ipList(iface.ipv4));
+    setText(card.querySelector('.f-ipv6'), ipList(iface.ipv6));
+    setText(card.querySelector('.f-gw'), iface.gateway);
+    setText(card.querySelector('.f-dns'), (iface.dns_servers && iface.dns_servers.length) ? iface.dns_servers.join(', ') : null);
+    setText(card.querySelector('.f-bytes'), fmtBytes(iface.rx_bytes) + ' / ' + fmtBytes(iface.tx_bytes));
+  }
+
+  function renderNetwork(net){
+    if(!net) return;
+    var ifaces = net.interfaces || [];
+    var defaultIface = null;
+    for(var i = 0; i < ifaces.length; i++){
+      if(ifaces[i].is_default){ defaultIface = ifaces[i]; break; }
+    }
+    setText(defaultIfaceName, defaultIface ? defaultIface.display_name : null);
+    setText(publicIpEl, net.public_ip);
+    reconcile(ifaceGrid, ifaces, function(i){ return hashKey(i.name); }, createIfaceCard, updateIfaceCard);
+  }
+
+  // ========== TRACEROUTE ==========
+  var trTarget = $('#trTarget');
+  var trMaxHops = $('#trMaxHops');
+  var trStart = $('#trStartBtn');
+  var trStop = $('#trStopBtn');
+  var trResolved = $('#trResolved');
+  var trStatusText = $('#trStatusText');
+  var trError = $('#trError');
+  var hopsBody = $('#hopsBody');
+  var maxRttSeen = 1;
+
+  trStart.addEventListener('click', function(){
+    var target = trTarget.value.trim();
+    if(!target){ trTarget.focus(); return; }
+    var payload = {cmd: 'traceroute_start', target: target};
+    var mh = parseInt(trMaxHops.value, 10);
+    if(!isNaN(mh) && mh > 0) payload.max_hops = mh;
+    send(payload);
+  });
+  trStop.addEventListener('click', function(){ send({cmd: 'traceroute_stop'}); });
+
+  function hopLocationText(hop){
+    if(hop.city && hop.country) return hop.city + ', ' + hop.country;
+    return hop.city || hop.country || null;
+  }
+
+  function createHopRow(hop){
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="ttl mono"></td>' +
+      '<td class="addr mono"></td>' +
+      '<td class="hostname mono"></td>' +
+      '<td class="location"></td>' +
+      '<td class="rtt"><div class="rtt-meter"><span class="rtt-val mono"></span><div class="bar-track"><div class="bar-fill"></div></div></div></td>';
+    updateHopRow(tr, hop);
+    return tr;
+  }
+  function updateHopRow(tr, hop){
+    setText(tr.querySelector('.ttl'), hop.ttl);
+    var addrText = hop.timeout ? '* * * (timeout)' : (hop.addr || (hop.rtt_ms === null ? 'waiting…' : '—'));
+    var addrEl = tr.querySelector('.addr');
+    if(addrEl.textContent !== addrText) addrEl.textContent = addrText;
+    tr.classList.toggle('hop-timeout', !!hop.timeout);
+    setText(tr.querySelector('.hostname'), hop.hostname);
+    setText(tr.querySelector('.location'), hopLocationText(hop));
+
+    var rttEl = tr.querySelector('.rtt-val');
+    var fill = tr.querySelector('.bar-fill');
+    if(hop.rtt_ms !== null && hop.rtt_ms !== undefined){
+      setText(rttEl, hop.rtt_ms.toFixed(1) + ' ms');
+      var pct = Math.min(100, (hop.rtt_ms / maxRttSeen) * 100);
+      fill.style.width = pct + '%';
+      fill.style.background = 'var(--info)';
+    } else if(hop.timeout){
+      setText(rttEl, 'timeout');
+      fill.style.width = '100%';
+      fill.style.background = 'var(--bad)';
+    } else {
+      setText(rttEl, '—');
+      fill.style.width = '0%';
+    }
+  }
+
+  function renderTraceroute(tr){
+    if(!tr) return;
+    if(document.activeElement !== trTarget) trTarget.value = tr.target || trTarget.value;
+    if(document.activeElement !== trMaxHops && tr.max_hops) trMaxHops.value = tr.max_hops;
+    setText(trResolved, tr.resolved_ip);
+    setText(trStatusText, tr.running ? 'Running…' : (tr.done ? 'Done' : 'Idle'));
+
+    trStart.disabled = !!tr.running;
+    trStop.disabled = !tr.running;
+    trTarget.disabled = !!tr.running;
+    trMaxHops.disabled = !!tr.running;
+
+    setError(trError, tr.error);
+
+    var hops = tr.hops || [];
+    maxRttSeen = hops.reduce(function(m, h){ return (h.rtt_ms != null && h.rtt_ms > m) ? h.rtt_ms : m; }, 1);
+    reconcile(hopsBody, hops, function(h){ return h.ttl; }, createHopRow, updateHopRow);
+  }
+
+  // ========== TELNET ==========
+  var tnHost = $('#tnHost');
+  var tnPort = $('#tnPort');
+  var tnConnect = $('#tnConnectBtn');
+  var tnDisconnect = $('#tnDisconnectBtn');
+  var tnPill = $('#tnStatusPill');
+  var tnStatusText = $('#tnStatusText');
+  var tnError = $('#tnError');
+  var tnTerminal = $('#tnTerminal');
+  var tnInput = $('#tnInput');
+  var lastTelnetBuffer = null;
+
+  tnConnect.addEventListener('click', function(){
+    var host = tnHost.value.trim();
+    var port = parseInt(tnPort.value, 10) || 23;
+    if(!host){ tnHost.focus(); return; }
+    send({cmd: 'telnet_connect', host: host, port: port});
+  });
+  tnDisconnect.addEventListener('click', function(){ send({cmd: 'telnet_disconnect'}); });
+  tnInput.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      var val = tnInput.value;
+      send({cmd: 'telnet_send', data: val + '\n'});
+      tnInput.value = '';
+    }
+  });
+
+  function renderTelnet(t){
+    if(!t) return;
+    if(document.activeElement !== tnHost) tnHost.value = t.host || tnHost.value;
+    if(document.activeElement !== tnPort && t.port) tnPort.value = t.port;
+
+    tnPill.className = 'pill ' + (t.connected ? 'ok' : (t.connecting ? 'warn' : 'bad'));
+    setText(tnStatusText, t.connected ? 'Connected' : (t.connecting ? 'Connecting…' : 'Disconnected'));
+
+    tnConnect.disabled = !!(t.connected || t.connecting);
+    tnDisconnect.disabled = !(t.connected || t.connecting);
+    tnHost.disabled = !!(t.connected || t.connecting);
+    tnPort.disabled = !!(t.connected || t.connecting);
+    tnInput.disabled = !t.connected;
+
+    setError(tnError, t.error);
+
+    var buf = t.buffer || '';
+    if(buf !== lastTelnetBuffer){
+      var wasAtBottom = (tnTerminal.scrollTop + tnTerminal.clientHeight >= tnTerminal.scrollHeight - 24);
+      tnTerminal.textContent = buf;
+      lastTelnetBuffer = buf;
+      if(wasAtBottom) tnTerminal.scrollTop = tnTerminal.scrollHeight;
+    }
+  }
+
+  // ========== SPEED TEST ==========
+  var stStart = $('#stStartBtn');
+  var stStage = $('#stStage');
+  var stStageText = $('#stStageText');
+  var stServerSelect = $('#stServerSelect');
+  var stError = $('#stError');
+  var canvas = $('#spark');
+  var ctx = canvas.getContext('2d');
+  var statPing = $('#statPing');
+  var statJitter = $('#statJitter');
+  var statLoss = $('#statLoss');
+  var statDown = $('#statDown');
+  var statUp = $('#statUp');
+  var lastSpeedtestSamples = {down: [], up: []};
+
+  stStart.addEventListener('click', function(){
+    if(stStart.dataset.running === '1'){ send({cmd: 'speedtest_stop'}); }
+    else { send({cmd: 'speedtest_start', server: stServerSelect.value}); }
+  });
+
+  var stageLabels = {idle: 'Idle', ping: 'Testing latency…', download: 'Testing download…', upload: 'Testing upload…', done: 'Done', error: 'Error'};
+  var stageColors = {idle: 'info', ping: 'warn', download: 'info', upload: 'info', done: 'ok', error: 'bad'};
+  function createServerOption(server){
+    var opt = document.createElement('option');
+    opt.value = server.id;
+    opt.textContent = server.label;
+    return opt;
+  }
+  function updateServerOption(opt, server){
+    if(opt.value !== server.id) opt.value = server.id;
+    if(opt.textContent !== server.label) opt.textContent = server.label;
+  }
+  function serverSupportsUpload(st){
+    var id = st.selected_server;
+    var servers = st.available_servers || [];
+    for(var i = 0; i < servers.length; i++){
+      if(servers[i].id === id) return servers[i].supports_upload !== false;
+    }
+    return true;
+  }
+
+
+  function drawSparkline(down, up){
+    var dpr = window.devicePixelRatio || 1;
+    var cw = canvas.clientWidth || 300;
+    var ch = canvas.clientHeight || 160;
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    var w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    var all = (down || []).concat(up || []);
+    var max = all.length ? Math.max.apply(null, all) : 1;
+    if(max <= 0) max = 1;
+    function drawSeries(arr, color){
+      if(!arr || arr.length < 2) return;
+      ctx.beginPath();
+      ctx.lineWidth = Math.max(1, 2 * dpr);
+      ctx.strokeStyle = color;
+      ctx.lineJoin = 'round';
+      arr.forEach(function(v, idx){
+        var x = (idx / (arr.length - 1)) * w;
+        var y = h - (v / max) * (h * 0.85) - h * 0.05;
+        if(idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    var styles = getComputedStyle(document.documentElement);
+    drawSeries(down, styles.getPropertyValue('--info').trim());
+    drawSeries(up, styles.getPropertyValue('--accent3').trim());
+  }
+
+  function renderSpeedtest(st){
+    if(!st) return;
+    var running = !!st.running;
+    stStart.dataset.running = running ? '1' : '0';
+    var btnText = running ? 'Stop Test' : 'Start Test';
+    if(stStart.textContent !== btnText) stStart.textContent = btnText;
+    stStart.classList.toggle('danger', running);
+
+    var stage = st.stage || 'idle';
+    var pillCls = 'pill ' + (stageColors[stage] || 'info');
+    if(stStage.className !== pillCls) stStage.className = pillCls;
+    setText(stStageText, stageLabels[stage] || stage);
+
+    reconcile(stServerSelect, st.available_servers || [], function(s){ return s.id; }, createServerOption, updateServerOption);
+    if(document.activeElement !== stServerSelect && st.selected_server && stServerSelect.value !== st.selected_server){
+      stServerSelect.value = st.selected_server;
+    }
+    stServerSelect.disabled = running;
+    setError(stError, st.error);
+
+    setText(statPing, st.ping_ms != null ? st.ping_ms.toFixed(1) + ' ms' : null);
+    setText(statJitter, st.jitter_ms != null ? st.jitter_ms.toFixed(1) + ' ms' : null);
+    setText(statLoss, st.packet_loss_pct != null ? st.packet_loss_pct.toFixed(1) + ' %' : null);
+    setText(statDown, st.download_mbps != null ? st.download_mbps.toFixed(1) + ' Mbps' : null);
+    if(!serverSupportsUpload(st)){
+      var upNotSupported = 'not supported by this server';
+      if(statUp.textContent !== upNotSupported) statUp.textContent = upNotSupported;
+      statUp.classList.add('muted-stat');
+    } else {
+      statUp.classList.remove('muted-stat');
+      setText(statUp, st.upload_mbps != null ? st.upload_mbps.toFixed(1) + ' Mbps' : null);
+    }
+
+    lastSpeedtestSamples = {down: st.download_samples || [], up: st.upload_samples || []};
+    drawSparkline(lastSpeedtestSamples.down, lastSpeedtestSamples.up);
+  }
+
+  var resizeRaf = null;
+  window.addEventListener('resize', function(){
+    if(resizeRaf) return;
+    resizeRaf = requestAnimationFrame(function(){
+      resizeRaf = null;
+      drawSparkline(lastSpeedtestSamples.down, lastSpeedtestSamples.up);
+    });
+  });
+
+  // ========== LOG ==========
+  var logBody = $('#logBody');
+  var logDrawer = $('#logDrawer');
+  var logToggle = $('#logToggle');
+  var lastLogStr = '';
+
+  $('#logClose').addEventListener('click', function(){ logDrawer.classList.remove('open'); });
+  logToggle.addEventListener('click', function(){
+    logDrawer.classList.toggle('open');
+    if(logDrawer.classList.contains('open')) logBody.scrollTop = logBody.scrollHeight;
+  });
+
+  function renderLog(log){
+    log = log || [];
+    var str = log.join('\n');
+    if(str === lastLogStr) return;
+    lastLogStr = str;
+    var wasAtBottom = (logBody.scrollTop + logBody.clientHeight >= logBody.scrollHeight - 24);
+    logBody.textContent = str;
+    if(wasAtBottom) logBody.scrollTop = logBody.scrollHeight;
+  }
+
+  // ========== dispatch ==========
+  function applyState(msg){
+    renderNetwork(msg.network);
+    renderTraceroute(msg.traceroute);
+    renderTelnet(msg.telnet);
+    renderSpeedtest(msg.speedtest);
+    renderLog(msg.log);
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>
