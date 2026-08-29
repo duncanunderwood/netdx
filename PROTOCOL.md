@@ -81,8 +81,12 @@ Sent once on connect, and again every time state changes (server pushes full sna
     "error": null
   },
   "log": [
-    { "ts": "2026-08-30T14:03:41Z", "message": "traceroute to example.com started" }
-  ],   // newest last, cap 200 entries. `ts` is full RFC3339 UTC (not just a time-of-day string).
+    { "ts": "2026-08-30T14:03:41Z", "message": "traceroute to example.com started" },
+    { "ts": "2026-08-30T14:04:02Z", "message": "event log exported: netdx-log-20260830-140402.csv", "export_filename": "netdx-log-20260830-140402.csv" }
+  ],   // newest last, cap 200 entries. `ts` is full RFC3339 UTC. `export_filename` is present
+       // (non-null) only on the one entry announcing a completed `log_export` — render that
+       // row as a link to `GET /exports/<export_filename>?token=<TOKEN>` (see below); every
+       // other entry omits the field entirely (not just `null` — check for its presence/truthiness).
   "update": {
     "current_version": "0.2.0",
     "checking": false,
@@ -125,82 +129,25 @@ instead. In other words: display `download_mbps` if it's non-null, otherwise the
 
 `server` is optional in `speedtest_start` (an omitted/unrecognized id falls back to the last-selected server, or Cloudflare). Its value must be one of `available_servers[].id` from the most recent state message. When the selected server has `"supports_upload": false`, the backend skips the upload stage entirely — `upload_mbps` stays `null` and `stage` goes straight from `"download"` to `"done"`; the SPA should show "not supported by this server" instead of a dash for the upload stat in that case, not imply the test hung. (Today only Cloudflare is offered, and it always supports upload — but don't hardcode that assumption away.)
 
-`log_export` writes the current log (server-side, full ~200-entry buffer, not just what the SPA happens to have rendered) to a CSV file under the app's data directory and appends a log line noting the path (or the error) — the SPA doesn't receive the file directly, just watch `log` for the resulting entry. `log_clear` empties the log (both server and SPA copies update via the next `state` push) and also appends one fresh "event log cleared" entry.
+`log_export` writes the current log (server-side, full ~200-entry buffer, not just what the SPA happens to have rendered) to a CSV file under the app's data directory and appends a log line noting the path (or the error) — that entry carries `export_filename`, which the SPA turns into a `GET /exports/<export_filename>?token=<TOKEN>` download link (see below). `log_clear` empties the log (both server and SPA copies update via the next `state` push) and also appends one fresh "event log cleared" entry.
 
 `check_for_update` triggers a background GitHub Releases check; watch `update.checking` (spinner) then `update.update_available`/`update.error`. `install_update` only does something if `update.update_available` is currently true (silently logs a message and no-ops otherwise) — downloads the new binary, swaps it in, and relaunches netdx as a new process. **The server process exits on success** — the WebSocket will drop and the SPA's reconnect-with-backoff logic should kick in and quietly reconnect once the new process is back up (same port, same token, since the relaunch preserves the original CLI args). Show `update.installing` as a blocking "installing, restarting shortly…" state meanwhile.
+
+## `GET /exports/{filename}?token=<TOKEN>`
+
+Downloads a previously-exported CSV (`Content-Disposition: attachment`). `filename` must exactly match what a `log` entry's `export_filename` field gave you — the server only ever serves its own `netdx-log-<timestamp>.csv` naming pattern and 400s on anything else (no arbitrary path access). `401` on a missing/bad token, `404` if the file's since been moved/deleted.
 
 ## Design brief for the SPA (single file: `src/web/static/index.html`, inline `<style>`/`<script>`, zero external requests/CDNs/fonts/build tools)
 
 - Single HTML file, works when opened via `http://<lan-ip>:<port>/?token=...` on a phone or laptop browser on the same network (or over the internet if port-forwarded/tunneled). No React/build step — vanilla JS + WebSocket + DOM (or plain `<canvas>` for the sparkline), so the Rust binary can `include_str!` it with zero JS toolchain dependency.
 - Tabs/sections: **Overview** (interfaces — like `ipconfig`/`ifconfig`, shows default interface highlighted, gateway, DNS, MAC, IPs, MTU, up/down badge), **Traceroute** (input box + start/stop, live hop table with RTT bars, hostname + location columns), **Telnet** (host:port input, connect/disconnect, terminal-style scrollback pane + input line, monospace), **Speed Test** (big start button, live gauges/chart for download/upload while running, final stats grid: ping/jitter/loss/down/up).
 - Fully responsive: usable on a phone screen (techs walking around a site) and a desktop monitor. Mobile-first flex/grid layout, tap targets >= 40px.
-- Reconnect automatically if the WebSocket drops (retry with backoff), show a small connection-status pill. This already exists and must keep working through an `install_update`-triggered restart (server exits, comes back up moments later on the same port).
-- **Colourblind-safe palette — do not use raw red/green as the only signal.** Use the Okabe-Ito palette as CSS custom properties (already defined, keep as-is):
+- Reconnect automatically if the WebSocket drops (retry with backoff), show a small connection-status pill. Must keep working through an `install_update`-triggered restart (server exits, comes back up moments later on the same port).
+- **Colourblind-safe palette — do not use raw red/green as the only signal.** Use the Okabe-Ito palette as CSS custom properties:
   - `--ok:#009E73`, `--warn:#E69F00`, `--bad:#D55E00` (never pure red), `--info:#0072B2`, `--accent2:#56B4E9`, `--accent3:#CC79A7`.
   - Every status indicator pairs colour with a shape/icon/text label, never colour alone.
 - "Quick and modern": subtle transitions, no layout jank, live-updating numbers without full-page re-render (diff the DOM or just update text content).
 
 ### Already implemented (do not redo, just don't break)
 
-Light/dark theme toggle, the speed test server `<select>`, tab switching, WS reconnect-with-backoff, the traceroute hop table (with hostname/location columns), the telnet terminal pane, and the persistent "Developed by MyEvent Labs" footer. All already work correctly against this protocol.
-
-### Task: rework the activity log from a floating drawer into an always-visible panel
-
-Currently there's a floating "Log" button (`#logToggle`) that opens an overlay drawer
-(`#logDrawer`) showing the *entire* log as one big scrollable blob of plain text. Replace this
-with an **always-visible panel** below `<main>` (visible regardless of which tab is active — so
-outside the `tabpanel` divs, same idea as the footer), matching what the terminal UI now does:
-
-- Shows the **latest 10 entries** by default, one per row, each formatted as the `HH:MM:SS` time
-  (sliced out of the full `ts` RFC3339 string — e.g. `entry.ts.slice(11, 19)`) plus the message.
-- When there are more than 10 total entries, the panel becomes scrollable (a bounded-height
-  `overflow-y:auto` container sized to ~10 rows) so the tech can scroll up to see older entries —
-  a real native scrollbar is fine and expected here, no need to hand-roll virtual scrolling.
-- A small header row with the panel title, an **"Export CSV"** button that sends
-  `{"cmd":"log_export"}`, and a **"Clear"** button that sends `{"cmd":"log_clear"}` (a plain
-  click is fine, no confirmation dialog needed — it's a local diagnostics log, not destructive to
-  anything else).
-- Remove the old floating button/drawer entirely (`#logToggle`, `#logDrawer`, their CSS and JS)
-  once the new panel replaces them — no dead code left behind.
-- Reuse the existing colourblind-safe `.card`/`.btn` styling conventions already in the file;
-  this is a diagnostics/utility panel, keep it visually quiet (muted, not competing with the tab
-  content above it).
-
-### Task: speed test chart — smoother, and closer to a real dashboard
-
-The current `drawSparkline` draws a raw jagged line straight from `download_samples`/
-`upload_samples` on `<canvas id="spark">`. Two changes:
-
-1. **Smooth it**: apply a short centered moving average (window of ~3–4 samples) to each series
-   before plotting — flattens the sample-to-sample zigzag (each sample is an instantaneous
-   ~200ms reading, inherently noisy) into a readable trend, without hiding the real trend shape.
-2. **Make it look like a real speed-test dashboard**: filled area under each curve (a
-   `canvas` linear gradient fading from the series colour at ~25% opacity down to transparent,
-   drawn as a closed path down to the baseline before the stroked line on top), plus a large,
-   prominent live number above the chart per direction (Download / Upload) that updates in real
-   time while that stage is running and settles to the final average once done — mirroring a
-   typical "Your Internet Speed" style layout (big number, small filled sparkline beneath it).
-   Follow the existing rule: `download_mbps` if set, else the last entry of `download_samples`
-   if any, else a placeholder — same for upload.
-   Use `--info` for the download series/number and `--accent3` for upload, consistent with the
-   rest of the app's colour semantics — don't switch to orange/purple just to visually match a
-   reference screenshot; the palette here is deliberately colourblind-distinct from `--warn`.
-
-### Task: "Check for Updates"
-
-Add a **"Check for Updates"** button (header area, near the theme toggle is a reasonable spot)
-that sends `{"cmd":"check_for_update"}`. Behavior driven entirely by `state.update`:
-
-- While `update.checking` is true, show a brief inline "Checking…" state on/near the button.
-- Once resolved: if `update.update_available` is true, show a small banner or modal — "Update
-  available: vX.Y.Z" with an **"Install & Restart"** button sending
-  `{"cmd":"install_update"}`, and a way to dismiss it. If `update.error` is set, show it (reuse
-  the existing `.error-text` styling). If neither and `update.latest_version` is set, briefly
-  indicate "up to date" then let it fade/dismiss — don't leave a permanent "you're current"
-  banner cluttering the header.
-- While `update.installing` is true, show a blocking-but-calm "Installing update, restarting…"
-  state (the server process is about to exit and come back up in a new process) — the existing
-  WS reconnect logic will pick the new instance back up automatically once it's listening again;
-  no special handling needed beyond not panicking the UI when the socket drops during this.
-
-Write the file to `C:/tmp/netdx/src/web/static/index.html`.
+Light/dark theme toggle; tab switching; WS reconnect-with-backoff; the traceroute hop table (hostname/location columns); the telnet terminal pane; the persistent "Developed by MyEvent Labs" footer; an always-visible Activity Log panel below `<main>` (latest 10 rows, scrollable past that, Export CSV / Clear buttons) with export rows rendered as a clickable link to `/exports/<filename>`; a smoothed, filled-gradient speed test chart with live Download/Upload numbers labeled `(live)`/`(avg)`; and a "Check for Updates" header button with a persistent pulsing-dot badge (independent of the dismissible "update available" banner) that only clears once the update installs or a fresh check finds nothing newer. All already work correctly against this protocol — extend, don't replace.

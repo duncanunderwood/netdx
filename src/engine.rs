@@ -227,7 +227,10 @@ pub async fn run(
                 };
                 let mut st = state.write();
                 match result {
-                    Ok(path) => st.push_log(format!("event log exported to {}", path.display())),
+                    Ok(path) => {
+                        let filename = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                        st.push_log_with_export(format!("event log exported: {filename}"), filename);
+                    }
                     Err(e) => st.push_log(format!("event log export failed: {e}")),
                 }
                 drop(st);

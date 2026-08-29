@@ -192,6 +192,13 @@
   button.btn.danger.secondary{background:none;color:var(--bad);}
   button.btn:disabled{opacity:.45;cursor:not-allowed;}
   button.btn:not(:disabled):active{opacity:.8;}
+  button.btn.update-ready{background:var(--info);color:#fff;box-shadow:0 0 0 3px rgba(0,114,178,.25);}
+  button.btn.secondary.update-ready{background:rgba(0,114,178,.1);}
+  .update-dot{
+    display:inline-block;width:.5rem;height:.5rem;margin-left:.4rem;
+    border-radius:50%;background:var(--info);vertical-align:middle;
+    animation:pulse 1.1s ease-in-out infinite;
+  }
 
   .error-text{color:var(--bad);font-weight:700;font-size:.85rem;margin:.25rem 0 .8rem;}
 
@@ -222,9 +229,10 @@
   .speed-readout{display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:.75rem;}
   .speed-metric{flex:1 1 160px;}
   .speed-metric-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .speed-metric-status{text-transform:none;letter-spacing:0;font-weight:700;}
   .speed-metric-value{font-size:2.1rem;font-weight:800;line-height:1.15;margin-top:.15rem;}
-  .speed-metric-value.dl-color{color:var(--info);}
-  .speed-metric-value.ul-color{color:var(--accent3);}
+  .dl-color{color:var(--info);}
+  .ul-color{color:var(--accent3);}
   .speed-metric-value.muted-stat{font-size:.95rem;font-weight:600;color:var(--muted);}
   #spark{width:100%;height:160px;display:block;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;}
 
@@ -236,6 +244,8 @@
   .log-row:last-child{border-bottom:none;}
   .log-row .log-time{color:var(--muted);flex:0 0 auto;}
   .log-row .log-msg{word-break:break-word;}
+  .log-row .log-msg a.export-link{color:var(--info);text-decoration:underline;font-weight:700;}
+  .log-row .log-msg a.export-link:hover{color:var(--accent2);}
   footer.site-footer{
     text-align:center;
     padding:1rem 1rem 5rem;
@@ -264,7 +274,7 @@
     <button id="themeToggle" class="theme-toggle-btn" type="button" aria-label="Toggle colour theme">
       <span class="theme-glyph" aria-hidden="true"></span><span class="theme-label"></span>
     </button>
-    <button id="checkUpdateBtn" class="btn secondary" type="button">Check for Updates</button>
+    <button id="checkUpdateBtn" class="btn secondary" type="button"><span id="checkUpdateBtnText">Check for Updates</span><span id="checkUpdateDot" class="update-dot" hidden aria-hidden="true"></span></button>
     <div id="statusPill" class="pill info" role="status" aria-live="polite">
       <span class="dot"></span><span id="statusText">Connecting…</span>
     </div>
@@ -359,11 +369,11 @@
     <p id="stError" class="error-text" hidden></p>
     <div class="speed-readout">
       <div class="speed-metric">
-        <div class="speed-metric-label">Download</div>
+        <div class="speed-metric-label">Download <span class="speed-metric-status dl-color" id="liveDownStatus"></span></div>
         <div class="speed-metric-value dl-color mono" id="liveDownVal">—</div>
       </div>
       <div class="speed-metric">
-        <div class="speed-metric-label">Upload</div>
+        <div class="speed-metric-label">Upload <span class="speed-metric-status ul-color" id="liveUpStatus"></span></div>
         <div class="speed-metric-value ul-color mono" id="liveUpVal">—</div>
       </div>
     </div>
@@ -583,6 +593,10 @@
     el.hidden = false;
     var t = '⚠ ' + text;
     if(el.textContent !== t) el.textContent = t;
+  }
+  var ESCAPE_MAP = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+  function escapeHtml(text){
+    return String(text == null ? '' : text).replace(/[&<>"']/g, function(c){ return ESCAPE_MAP[c]; });
   }
 
   // Non-reversible short key so raw values (e.g. Windows GUID interface
@@ -832,7 +846,9 @@
   var statDown = $('#statDown');
   var statUp = $('#statUp');
   var liveDownVal = $('#liveDownVal');
+  var liveDownStatus = $('#liveDownStatus');
   var liveUpVal = $('#liveUpVal');
+  var liveUpStatus = $('#liveUpStatus');
   var lastSpeedtestSamples = {down: [], up: []};
 
   stStart.addEventListener('click', function(){
@@ -888,6 +904,14 @@
     if(finalVal != null) return finalVal.toFixed(1) + ' Mbps';
     if(samples && samples.length) return samples[samples.length - 1].toFixed(1) + ' Mbps';
     return null;
+  }
+  // The final reading is always the average measured over the whole test; while still running
+  // it's the latest instantaneous sample. Labeling which one is on screen avoids a technician
+  // mistaking a live blip for the final result (or vice versa).
+  function chartMetricStatus(finalVal, samples){
+    if(finalVal != null) return 'avg';
+    if(samples && samples.length) return 'live';
+    return '';
   }
 
 
@@ -972,14 +996,18 @@
       setText(statUp, st.upload_mbps != null ? st.upload_mbps.toFixed(1) + ' Mbps' : null);
     }
 
+    var dlStatus = chartMetricStatus(st.download_mbps, st.download_samples);
     setText(liveDownVal, chartMetricText(st.download_mbps, st.download_samples));
+    liveDownStatus.textContent = dlStatus;
     if(!serverSupportsUpload(st)){
       var upNotSupportedLive = 'not supported by this server';
       if(liveUpVal.textContent !== upNotSupportedLive) liveUpVal.textContent = upNotSupportedLive;
       liveUpVal.classList.add('muted-stat');
+      liveUpStatus.textContent = '';
     } else {
       liveUpVal.classList.remove('muted-stat');
       setText(liveUpVal, chartMetricText(st.upload_mbps, st.upload_samples));
+      liveUpStatus.textContent = chartMetricStatus(st.upload_mbps, st.upload_samples);
     }
 
     lastSpeedtestSamples = {down: st.download_samples || [], up: st.upload_samples || []};
@@ -1010,7 +1038,14 @@
   }
   function updateLogRow(row, entry){
     setText(row.querySelector('.log-time'), (entry.ts || '').slice(11, 19));
-    setText(row.querySelector('.log-msg'), entry.message);
+    var msgEl = row.querySelector('.log-msg');
+    if(entry.export_filename){
+      var href = '/exports/' + encodeURIComponent(entry.export_filename) + '?token=' + encodeURIComponent(token);
+      var html = '<a class="export-link" href="' + href + '" target="_blank" rel="noopener noreferrer" download>' + escapeHtml(entry.message) + '</a>';
+      if(msgEl.innerHTML !== html) msgEl.innerHTML = html;
+    } else if(msgEl.querySelector('a') || msgEl.textContent !== entry.message){
+      setText(msgEl, entry.message);
+    }
   }
 
   function renderLog(log){
@@ -1022,13 +1057,15 @@
     // silently collapse into a single row. The index is guaranteed unique within one
     // render call, so nothing is ever lost — the only cost is a full row rebuild on the
     // rare occasion the log is long enough to trim from the front.
-    var indexed = log.map(function(e, i){ return { ts: e.ts, message: e.message, __idx: i }; });
+    var indexed = log.map(function(e, i){ return { ts: e.ts, message: e.message, export_filename: e.export_filename, __idx: i }; });
     reconcile(logBody, indexed, function(e){ return e.__idx; }, createLogRow, updateLogRow);
     if(wasAtBottom) logBody.scrollTop = logBody.scrollHeight;
   }
 
   // ========== UPDATE ==========
   var checkUpdateBtn = $('#checkUpdateBtn');
+  var checkUpdateBtnText = $('#checkUpdateBtnText');
+  var checkUpdateDot = $('#checkUpdateDot');
   var updateBanner = $('#updateBanner');
   var updateBannerText = $('#updateBannerText');
   var updateInstallBtn = $('#updateInstallBtn');
@@ -1057,12 +1094,19 @@
     u = u || {};
     var checking = !!u.checking;
     var installing = !!u.installing;
+    var available = !!u.update_available;
 
     checkUpdateBtn.disabled = checking || installing;
-    var btnLabel = checking ? 'Checking…' : 'Check for Updates';
-    if(checkUpdateBtn.textContent !== btnLabel) checkUpdateBtn.textContent = btnLabel;
+    // Persistent, obvious "there's something to do here" signal — a pulsing dot plus a
+    // highlighted button — that survives the banner being dismissed. It only ever clears once
+    // the update is actually installed (the running version catches up) or a fresh check finds
+    // nothing newer, never just because the user closed the banner.
+    checkUpdateBtn.classList.toggle('update-ready', available && !installing);
+    checkUpdateDot.hidden = !available || checking || installing;
+    var btnLabel = installing ? 'Installing…' : checking ? 'Checking…' : available ? 'Update Available' : 'Check for Updates';
+    if(checkUpdateBtnText.textContent !== btnLabel) checkUpdateBtnText.textContent = btnLabel;
 
-    var key = JSON.stringify([checking, installing, !!u.update_available, u.error || null, u.latest_version || null]);
+    var key = JSON.stringify([checking, installing, available, u.error || null, u.latest_version || null]);
     if(key === lastUpdateKey){
       if(installing) showUpdateBanner('installing', 'Installing update, restarting shortly…', false, false);
       return;
@@ -1074,8 +1118,8 @@
       showUpdateBanner('installing', 'Installing update, restarting shortly…', false, false);
     } else if(checking){
       hideUpdateBanner();
-    } else if(u.update_available){
-      showUpdateBanner('available', 'Update available: ' + u.latest_version, true, true);
+    } else if(available){
+      showUpdateBanner('available', '\u2b06 Update available: ' + u.latest_version, true, true);
     } else if(u.error){
       showUpdateBanner('error', u.error, false, true);
     } else if(u.latest_version){

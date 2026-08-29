@@ -92,10 +92,12 @@ same screens from your phone or another computer on the network.
 ## Checking for updates
 
 Press `u` in the terminal (or the **Check for Updates** button on the web
-page) to check GitHub for a newer release. If one's available, you'll see
-the version number with the option to install it — netdx downloads it,
-swaps itself out for the new version, and restarts automatically with the
-same settings you were already running with.
+page) to check GitHub for a newer release. If one's available, the button
+turns highlighted with a pulsing dot — impossible to miss, and it stays
+that way even if you dismiss the notification banner — until you install
+it or a later check finds nothing newer. Installing downloads it, swaps
+netdx out for the new version, and restarts automatically with the same
+settings you were already running with.
 
 ## Event log
 
@@ -105,7 +107,11 @@ web page). Two actions are always available:
 
 - **Export** (`e` in the terminal, "Export CSV" on the web page) — writes
   the full log, fully timestamped, to a CSV file you can open in Excel or
-  attach to a ticket. It's saved under netdx's application data folder:
+  attach to a ticket. The log entry announcing the export is itself a
+  clickable link straight to the file — a real terminal hyperlink in the
+  terminal window (works in Windows Terminal, iTerm2, kitty, WezTerm, and
+  most modern terminals), or a download link on the web page. It's saved
+  under netdx's application data folder either way:
   `%LOCALAPPDATA%\netdx\logs` on Windows, `~/Library/Application
   Support/netdx/logs` on macOS, `~/.local/share/netdx/logs` on Linux.
 - **Clear** (`C` in the terminal, "Clear" on the web page) — empties the
@@ -116,7 +122,10 @@ web page). Two actions are always available:
 netdx tests ping, jitter, packet loss, download, and upload against
 [Cloudflare](https://speed.cloudflare.com) — the only public speed-test
 endpoint that offers a real upload test (others only publish download-only
-test files, so they aren't offered as options here).
+test files, so they aren't offered as options here). While a test is
+running, the Download/Upload numbers update live and are marked `(live)`;
+once that phase finishes they settle to `(avg)` — the average measured
+over the whole test, not just the last reading.
 
 ## Keyboard shortcuts (terminal window)
 

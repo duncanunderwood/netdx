@@ -10,7 +10,17 @@ use crate::state::AppState;
 use crate::ui::app::{App, Mode, Tab};
 use crate::ui::theme;
 
-pub fn draw(frame: &mut Frame, app: &App, state: &AppState) {
+/// Screen position + text of a real OSC 8 hyperlink to overlay after ratatui finishes drawing a
+/// frame (ratatui has no native concept of a clickable link — see `footer_link_col` for the
+/// same trick already used for the footer credit).
+pub struct LinkTarget {
+    pub row: u16,
+    pub col: u16,
+    pub text: String,
+    pub url: String,
+}
+
+pub fn draw(frame: &mut Frame, app: &App, state: &AppState) -> Vec<LinkTarget> {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -32,7 +42,7 @@ pub fn draw(frame: &mut Frame, app: &App, state: &AppState) {
         Tab::Speedtest => draw_speedtest(frame, app, state, chunks[1]),
     }
 
-    draw_log_panel(frame, app, state, chunks[2]);
+    let links = draw_log_panel(frame, app, state, chunks[2]);
     draw_status(frame, app, state, chunks[3]);
     draw_footer(frame, chunks[4]);
 
@@ -42,11 +52,42 @@ pub fn draw(frame: &mut Frame, app: &App, state: &AppState) {
     if app.show_update {
         draw_update_popup(frame, state, area);
     }
+
+    // Popups paint over the log panel area, so any hyperlink written there would be visually
+    // wrong (covered text, but the link target still "live" underneath) — suppress entirely
+    // while one is open, matching how the footer link is already skipped for the QR popup.
+    if app.show_qr || app.show_update {
+        Vec::new()
+    } else {
+        links
+    }
+}
+
+/// Converts a local filesystem path into a `file://` URI, percent-encoding anything outside the
+/// small set of characters that are always safe unescaped in a URI path segment. Handles the
+/// Windows drive-letter case (`C:\...` -> `file:///C:/...`) as well as POSIX absolute paths.
+fn file_uri(path: &std::path::Path) -> String {
+    let raw = path.to_string_lossy().replace('\\', "/");
+    let raw = if raw.starts_with('/') { raw } else { format!("/{raw}") };
+    let mut encoded = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        if c.is_ascii_alphanumeric() || matches!(c, '/' | ':' | '-' | '_' | '.' | '~') {
+            encoded.push(c);
+        } else {
+            let mut buf = [0u8; 4];
+            for byte in c.encode_utf8(&mut buf).bytes() {
+                encoded.push_str(&format!("%{byte:02X}"));
+            }
+        }
+    }
+    format!("file://{encoded}")
 }
 
 /// Shared event log, shown at the bottom of every tab: the latest 10 entries by default,
-/// scrollable further back with Up/Down when there are more than that.
-fn draw_log_panel(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
+/// scrollable further back with Up/Down when there are more than that. Rows announcing a CSV
+/// export are rendered as a distinct "linky" style and returned as `LinkTarget`s so the caller
+/// can overlay a real clickable `file://` hyperlink after this frame is drawn.
+fn draw_log_panel(frame: &mut Frame, app: &App, state: &AppState, area: Rect) -> Vec<LinkTarget> {
     const VISIBLE: usize = 10;
     let total = state.log.len();
     let max_scroll = total.saturating_sub(VISIBLE);
@@ -54,17 +95,34 @@ fn draw_log_panel(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
     let end = total.saturating_sub(scroll);
     let start = end.saturating_sub(VISIBLE);
 
+    let mut links = Vec::new();
+    let time_width = 9u16; // "HH:MM:SS " prefix drawn before every message
     let lines: Vec<Line> = state
         .log
         .iter()
         .skip(start)
         .take(end - start)
-        .map(|entry| {
+        .enumerate()
+        .map(|(row_offset, entry)| {
             let time = entry.ts.get(11..19).unwrap_or(entry.ts.as_str());
-            Line::from(vec![
-                Span::styled(format!("{time} "), theme::muted_style()),
-                Span::raw(entry.message.clone()),
-            ])
+            if let Some(filename) = &entry.export_filename {
+                let path = crate::eventlog::logs_dir().join(filename);
+                links.push(LinkTarget {
+                    row: area.y + 1 + row_offset as u16,
+                    col: area.x + 1 + time_width,
+                    text: entry.message.clone(),
+                    url: file_uri(&path),
+                });
+                Line::from(vec![
+                    Span::styled(format!("{time} "), theme::muted_style()),
+                    Span::styled(entry.message.clone(), theme::accent2_style().add_modifier(ratatui::style::Modifier::UNDERLINED)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled(format!("{time} "), theme::muted_style()),
+                    Span::raw(entry.message.clone()),
+                ])
+            }
         })
         .collect();
 
@@ -75,6 +133,7 @@ fn draw_log_panel(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
     };
     let block = Block::default().borders(Borders::ALL).title(title);
     frame.render_widget(Paragraph::new(lines).block(block), area);
+    links
 }
 
 fn draw_update_popup(frame: &mut Frame, state: &AppState, area: Rect) {
@@ -193,9 +252,17 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(tabs, area);
 }
 
-fn draw_status(frame: &mut Frame, app: &App, _state: &AppState, area: Rect) {
-    let line = Line::from(Span::styled(app.status_hint(), theme::muted_style()));
-    frame.render_widget(Paragraph::new(line), area);
+fn draw_status(frame: &mut Frame, app: &App, state: &AppState, area: Rect) {
+    let mut spans = vec![Span::styled(app.status_hint(), theme::muted_style())];
+    // Persistent regardless of whether the update popup is currently open or was already
+    // dismissed — the only things that clear this are actually installing the update or a
+    // fresh check finding nothing newer, never just closing the popup.
+    if state.update.update_available && !app.show_update {
+        let version = state.update.latest_version.clone().unwrap_or_default();
+        spans.push(Span::raw("   "));
+        spans.push(Span::styled(format!("\u{2b06} update {version} available — press u"), theme::ok_style()));
+    }
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn status_badge(up: bool) -> Span<'static> {

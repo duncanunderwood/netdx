@@ -164,6 +164,14 @@ pub struct LogEntry {
     /// across midnight/day boundaries — the old HH:MM:SS-only clock silently lost the date.
     pub ts: String,
     pub message: String,
+    /// Set only on the "event log exported" entry itself: just the CSV's filename (never a
+    /// full local path — the web client is often a phone/laptop on another machine, so it's
+    /// meaningless there anyway, and it's needless disclosure of local filesystem layout).
+    /// The web UI turns this into a `/exports/<name>?token=...` download link; the TUI, which
+    /// always runs on the same machine that wrote the file, resolves it back to a full local
+    /// path and overlays a real OSC 8 terminal hyperlink over that row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export_filename: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -202,7 +210,16 @@ impl Default for AppState {
 
 impl AppState {
     pub fn push_log(&mut self, msg: impl Into<String>) {
-        self.log.push_back(LogEntry { ts: now_rfc3339(), message: msg.into() });
+        self.log.push_back(LogEntry { ts: now_rfc3339(), message: msg.into(), export_filename: None });
+        while self.log.len() > LOG_CAP {
+            self.log.pop_front();
+        }
+    }
+
+    /// Same as `push_log`, but tags the entry with the CSV filename it announces, so the UI can
+    /// render that specific line as a clickable link to open/download the file.
+    pub fn push_log_with_export(&mut self, msg: impl Into<String>, export_filename: String) {
+        self.log.push_back(LogEntry { ts: now_rfc3339(), message: msg.into(), export_filename: Some(export_filename) });
         while self.log.len() > LOG_CAP {
             self.log.pop_front();
         }
