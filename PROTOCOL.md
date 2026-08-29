@@ -81,12 +81,15 @@ Sent once on connect, and again every time state changes (server pushes full sna
     "error": null
   },
   "log": [
-    { "ts": "2026-08-30T14:03:41Z", "message": "traceroute to example.com started" },
-    { "ts": "2026-08-30T14:04:02Z", "message": "event log exported: netdx-log-20260830-140402.csv", "export_filename": "netdx-log-20260830-140402.csv" }
-  ],   // newest last, cap 200 entries. `ts` is full RFC3339 UTC. `export_filename` is present
-       // (non-null) only on the one entry announcing a completed `log_export` — render that
-       // row as a link to `GET /exports/<export_filename>?token=<TOKEN>` (see below); every
-       // other entry omits the field entirely (not just `null` — check for its presence/truthiness).
+    { "ts": "2026-08-30T14:03:41+10:00", "message": "traceroute to example.com started" },
+    { "ts": "2026-08-30T14:04:02+10:00", "message": "event log exported: netdx-log-20260830-140402.csv", "export_filename": "netdx-log-20260830-140402.csv" }
+  ],   // newest last, cap 200 entries. `ts` is the *server machine's local time*, ISO-8601
+       // with its UTC offset (`±HH:MM`) — not UTC, so it matches whatever the technician's own
+       // clock says. `entry.ts.slice(11, 19)` still gets you `HH:MM:SS` regardless of offset
+       // width. `export_filename` is present (non-null) only on the one entry announcing a
+       // completed `log_export` — render that row as a link to
+       // `GET /exports/<export_filename>?token=<TOKEN>` (see below); every other entry omits
+       // the field entirely (not just `null` — check for its presence/truthiness).
   "update": {
     "current_version": "0.2.0",
     "checking": false,

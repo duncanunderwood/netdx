@@ -324,9 +324,13 @@ pub async fn run(
 
 fn load_interfaces(state: &SharedState, changed_tx: &watch::Sender<()>, log_msg: &str) {
     let snap = interfaces::snapshot();
+    let local_ip = snap.interfaces.iter().find(|i| i.is_default).and_then(|i| i.ipv4.first()).map(|e| e.addr.clone());
     let mut st = state.write();
     st.network = snap;
     st.push_log(log_msg);
+    if let Some(ip) = local_ip {
+        st.push_log(format!("local IP address: {ip}"));
+    }
     drop(st);
     let _ = changed_tx.send(());
 }
@@ -337,7 +341,8 @@ fn spawn_public_ip_lookup(state: &SharedState, changed_tx: &watch::Sender<()>) {
     tokio::spawn(async move {
         if let Some(ip) = interfaces::lookup_public_ip().await {
             let mut st = state.write();
-            st.network.public_ip = Some(ip);
+            st.network.public_ip = Some(ip.clone());
+            st.push_log(format!("public IP address: {ip}"));
             drop(st);
             let _ = changed_tx.send(());
         }
@@ -447,7 +452,12 @@ async fn run_speedtest(state: SharedState, changed: watch::Sender<()>, server: s
         st.speedtest.jitter_ms = ping.jitter_ms;
         st.speedtest.packet_loss_pct = Some(ping.loss_pct);
         st.speedtest.stage = "download".to_string();
-        st.push_log("speed test: ping measured");
+        st.push_log(format!(
+            "speed test: ping {}, jitter {}, packet loss {:.0}%",
+            ping.ping_ms.map(|v| format!("{v:.1} ms")).unwrap_or_else(|| "n/a".to_string()),
+            ping.jitter_ms.map(|v| format!("{v:.1} ms")).unwrap_or_else(|| "n/a".to_string()),
+            ping.loss_pct
+        ));
         drop(st);
         let _ = changed.send(());
     }
@@ -510,6 +520,15 @@ async fn run_speedtest(state: SharedState, changed: watch::Sender<()>, server: s
     let mut st = state.write();
     st.speedtest.running = false;
     st.speedtest.stage = "done".to_string();
+    let summary = format!(
+        "speed test complete: ping {}, jitter {}, packet loss {}, download {}, upload {}",
+        st.speedtest.ping_ms.map(|v| format!("{v:.1} ms")).unwrap_or_else(|| "n/a".to_string()),
+        st.speedtest.jitter_ms.map(|v| format!("{v:.1} ms")).unwrap_or_else(|| "n/a".to_string()),
+        st.speedtest.packet_loss_pct.map(|v| format!("{v:.0}%")).unwrap_or_else(|| "n/a".to_string()),
+        st.speedtest.download_mbps.map(|v| format!("{v:.1} Mbps")).unwrap_or_else(|| "n/a".to_string()),
+        st.speedtest.upload_mbps.map(|v| format!("{v:.1} Mbps")).unwrap_or_else(|| "n/a".to_string()),
+    );
+    st.push_log(summary);
     crate::analytics::track(
         "speedtest_complete",
         serde_json::json!({

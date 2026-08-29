@@ -567,9 +567,9 @@ fn live_or_avg(avg: Option<f64>, current: Option<f64>) -> String {
     }
 }
 
-/// A high-resolution line chart using Unicode Braille Patterns (2x4 sub-cell dots per terminal
-/// cell) instead of `Sparkline`'s one-block-per-cell bars — much smoother for a Mbps-over-time
-/// trace at typical terminal sizes.
+/// A high-resolution bar chart using Unicode Braille Patterns (2x4 sub-cell dots per terminal
+/// cell) instead of `Sparkline`'s one-block-per-cell bars — much finer-grained bar heights for
+/// a Mbps-over-time trace at typical terminal sizes.
 fn braille_chart<'a>(title: String, samples: &[f64], points: &'a [(f64, f64)], color: Color) -> Chart<'a> {
     let y_max = samples.iter().cloned().fold(0.0_f64, f64::max).max(1.0) * 1.15;
     let y_mid = y_max / 2.0;
@@ -577,7 +577,7 @@ fn braille_chart<'a>(title: String, samples: &[f64], points: &'a [(f64, f64)], c
 
     let dataset = Dataset::default()
         .marker(Marker::Braille)
-        .graph_type(GraphType::Line)
+        .graph_type(GraphType::Bar)
         .style(Style::default().fg(color))
         .data(points);
 

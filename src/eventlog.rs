@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::PathBuf;
 
-use crate::state::{now_rfc3339, LogEntry};
+use crate::state::{now_local_iso, LogEntry};
 
 /// Per-user application data directory, following each OS's convention — deliberately not the
 /// directory the binary happens to run from (which may be a shared `bin/` alongside unrelated
@@ -54,8 +54,12 @@ pub fn export_csv(entries: &VecDeque<LogEntry>) -> Result<PathBuf, String> {
     let dir = logs_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
 
-    // e.g. "2026-08-30T14:03:41Z" -> "20260830-140341", safe as a filename on every platform.
-    let stamp = now_rfc3339().replace(['-', ':'], "").replace('T', "-").trim_end_matches('Z').to_string();
+    // Local timestamp is "YYYY-MM-DDTHH:MM:SS±HH:MM" — take just the date/time portion (the
+    // offset isn't needed for a unique-enough filename) and strip separators, e.g.
+    // "2026-08-30T14:03:41+10:00" -> "20260830-140341".
+    let local = now_local_iso();
+    let datetime_part = local.get(0..19).unwrap_or(&local);
+    let stamp = datetime_part.replace(['-', ':'], "").replace('T', "-");
     let path = dir.join(format!("netdx-log-{stamp}.csv"));
 
     let mut file = std::fs::File::create(&path).map_err(|e| format!("couldn't create {}: {e}", path.display()))?;

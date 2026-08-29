@@ -103,7 +103,10 @@ settings you were already running with.
 
 Every screen shows the last 10 log entries at the bottom (older ones are
 one scroll away — `↑`/`↓` in the terminal, or just scroll the panel on the
-web page). Two actions are always available:
+web page). Every entry is timestamped in your computer's own local time
+(not UTC), and every completed speed test logs a summary line with the
+full latency picture — ping, jitter, and packet loss, alongside the
+download/upload results. Two actions are always available:
 
 - **Export** (`e` in the terminal, "Export CSV" on the web page) — writes
   the full log, fully timestamped, to a CSV file you can open in Excel or
