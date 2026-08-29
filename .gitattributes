@@ -1,0 +1,4 @@
+# Normalize line endings to LF in the repo regardless of the contributor's OS/checkout
+# settings, so diffs stay clean and Windows checkouts don't keep flagging every tracked file
+# as "modified" due to autocrlf conversion alone.
+* text=auto eol=lf
