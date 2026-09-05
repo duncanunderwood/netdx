@@ -1,6 +1,6 @@
 [package]
 name = "netdx"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "Fast, modern, colourblind-friendly terminal network diagnostics: traceroute, telnet, speedtest, interfaces — with a built-in remote web UI."
 license = "MIT"
